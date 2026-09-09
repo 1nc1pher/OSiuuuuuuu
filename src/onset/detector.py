@@ -3,7 +3,7 @@ src/onset/detector.py
 
 Step 2 of the pipeline: onset detection via spectral flux.
 
-THEORY (see chat for full explanation) -- short version:
+THEORY:
   1. Take the magnitude spectrogram (already computed in Step 1's mel
      spectrogram machinery).
   2. Compute "spectral flux": how much the spectrum's energy increased

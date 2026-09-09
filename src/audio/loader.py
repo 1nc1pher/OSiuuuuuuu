@@ -29,7 +29,7 @@ DEFAULT_SR = 22050
 @dataclass
 class AudioTrack:
     """Container for a loaded audio track and its basic metadata."""
-    y: np.ndarray        # mono waveform, float32, range [-1, 1]
+    y: np.ndarray        # mono waveform, float32, range [-1, 1](normalize kora)
     sr: int               # sample rate (Hz)
     duration: float       # seconds
     path: str             # original file path
@@ -63,7 +63,9 @@ def load_audio(path: str, sr: int = DEFAULT_SR, mono: bool = True,
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Audio file not found: {path}")
 
-    y, sr_actual = librosa.load(path, sr=sr, mono=mono)
+    y, sr_actual = librosa.load(path, sr=sr, mono=mono)# y air pressure store kore
+    # actual audio 44.1 khz -> downsamples ( 1. low pass filter(11.05 khz) , 2. sinc interpolation)
+    # mean nile aliasing issue hoy(whatever the fuck that is)
 
     if normalize:
         peak = np.max(np.abs(y))
