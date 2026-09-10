@@ -1,0 +1,134 @@
+# configs/difficulty_presets.yaml
+#
+# Difficulty presets for the beatmap generator (Step 5).
+#
+# IMPORTANT: these are *input* controls that shape how the map is built.
+# They are NOT a computed osu! star rating -- real star rating is a whole
+# separate algorithm and is out of scope. The `stars` field is just a
+# rough target label so `--difficulty 4.5` can pick the nearest tier.
+#
+# Presets are ordered easy -> hard. src/mapping/difficulty.py loads this
+# file; the same values are mirrored in BUILTIN_PRESETS there as a fallback
+# and a drift check (tests/test_difficulty.py asserts they match).
+#
+# Field reference
+#   stars               rough difficulty target (label only)
+#   onset_margin        Step 2 detector: higher -> fewer, more confident onsets
+#   onset_delta         Step 2 detector: threshold floor in quiet passages
+#   snap_division       rhythm grid: 1 = 1/1, 2 = 1/2, 4 = 1/4
+#   min_spacing_beats   extra density thinning: min beats between objects
+#   approach_rate       osu! AR (0-10)
+#   overall_difficulty  osu! OD (0-10)
+#   circle_size         osu! CS (0-10)
+#   hp_drain            osu! HP (0-10)
+#   slider_multiplier   osu! [Difficulty] SliderMultiplier (px/beat = 100 * this)
+#   distance_spacing    placement: circle DIAMETERS travelled per beat. This is
+#                       the editor's distance-snap multiplier -- spacing is
+#                       linear in the time gap and scales with CS, so the same
+#                       number reads the same way at any circle size.
+#   max_turn_degrees    placement: how sharply flow may turn on a 1-beat gap
+#                       (streams turn far less; jumps get the full range)
+#   spinner_min_beats   gap (with sustain) at/above which a gap becomes a spinner
+#   slider_min_beats    gap (with sustain) at/above which a gap becomes a slider
+#   slider_max_beats    cap on a held-note slider's length
+#   sustain_threshold   fraction of a gap that must stay "loud" for slider/spinner
+#   stream_min_len      onsets in a fast run needed to fold it into one slider
+#                       (LOW = fold aggressively -> easier; HIGH / 999 = keep
+#                       the run as individual circles -> harder streams)
+
+presets:
+
+  Easy:
+    stars: 1.5
+    onset_margin: 2.2
+    onset_delta: 0.08
+    snap_division: 1
+    min_spacing_beats: 2.0
+    approach_rate: 4.0
+    overall_difficulty: 3.0
+    circle_size: 3.2
+    hp_drain: 3.0
+    slider_multiplier: 1.2
+    distance_spacing: 0.85
+    max_turn_degrees: 40.0
+    spinner_min_beats: 4.0
+    slider_min_beats: 1.5
+    slider_max_beats: 3.0
+    sustain_threshold: 0.55
+    stream_min_len: 4
+
+  Normal:
+    stars: 2.5
+    onset_margin: 1.8
+    onset_delta: 0.06
+    snap_division: 2
+    min_spacing_beats: 1.0
+    approach_rate: 6.0
+    overall_difficulty: 4.0
+    circle_size: 3.8
+    hp_drain: 4.0
+    slider_multiplier: 1.3
+    distance_spacing: 1.05
+    max_turn_degrees: 55.0
+    spinner_min_beats: 4.0
+    slider_min_beats: 1.0
+    slider_max_beats: 2.0
+    sustain_threshold: 0.5
+    stream_min_len: 5
+
+  Hard:
+    stars: 3.7
+    onset_margin: 1.5
+    onset_delta: 0.05
+    snap_division: 4
+    min_spacing_beats: 0.5
+    approach_rate: 7.5
+    overall_difficulty: 6.0
+    circle_size: 4.0
+    hp_drain: 5.0
+    slider_multiplier: 1.4
+    distance_spacing: 1.3
+    max_turn_degrees: 75.0
+    spinner_min_beats: 3.0
+    slider_min_beats: 1.0
+    slider_max_beats: 2.0
+    sustain_threshold: 0.5
+    stream_min_len: 6
+
+  Insane:
+    stars: 4.8
+    onset_margin: 1.3
+    onset_delta: 0.04
+    snap_division: 4
+    min_spacing_beats: 0.25
+    approach_rate: 8.5
+    overall_difficulty: 7.5
+    circle_size: 4.2
+    hp_drain: 6.0
+    slider_multiplier: 1.5
+    distance_spacing: 1.65
+    max_turn_degrees: 100.0
+    spinner_min_beats: 3.0
+    slider_min_beats: 1.0
+    slider_max_beats: 1.5
+    sustain_threshold: 0.5
+    stream_min_len: 12
+
+  Expert:
+    stars: 6.0
+    onset_margin: 1.1
+    onset_delta: 0.03
+    snap_division: 4
+    min_spacing_beats: 0.25
+    approach_rate: 9.3
+    overall_difficulty: 8.5
+    circle_size: 4.2
+    hp_drain: 6.5
+    slider_multiplier: 1.6
+    distance_spacing: 2.1
+    max_turn_degrees: 130.0
+    spinner_min_beats: 3.0
+    slider_min_beats: 1.0
+    slider_max_beats: 1.5
+    sustain_threshold: 0.5
+    stream_min_len: 999
