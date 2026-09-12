@@ -3,3 +3,7 @@
 
 # Ignore data folder
 data/
+
+# .NET build artifacts (frontend/)
+bin/
+obj/

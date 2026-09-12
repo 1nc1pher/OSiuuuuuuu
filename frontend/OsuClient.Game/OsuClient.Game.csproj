@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>OsuClient.Game</RootNamespace>
+    <AssemblyName>OsuClient.Game</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      ppy.osu.Framework is the actual framework osu!(lazer) is built on.
+      2026.807.0 is the newest release that still targets net8.0; every
+      release from 2026.901.0 onwards is net10.0-only.
+    -->
+    <PackageReference Include="ppy.osu.Framework" Version="2026.807.0" />
+  </ItemGroup>
+
+</Project>

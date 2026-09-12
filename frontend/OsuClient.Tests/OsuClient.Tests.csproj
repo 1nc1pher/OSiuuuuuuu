@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Exe (not a plain library) so this project doubles as the osu.Framework
+      visual test browser host — see Visual/VisualTestRunner.cs.
+      GenerateProgramFile=false stops Microsoft.NET.Test.Sdk emitting its own
+      Main, which would clash with VisualTestRunner's.
+    -->
+    <OutputType>Exe</OutputType>
+    <GenerateProgramFile>false</GenerateProgramFile>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>OsuClient.Tests</RootNamespace>
+    <AssemblyName>OsuClient.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- NUnit pinned to 3.13.3: the version ppy.osu.Framework itself depends on. -->
+    <PackageReference Include="NUnit" Version="3.13.3" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OsuClient.Game\OsuClient.Game.csproj" />
+  </ItemGroup>
+
+</Project>
