@@ -25,6 +25,7 @@ namespace OsuClient.Game.Screens.SongSelect
     public partial class SongSelectScreen : Screen
     {
         private readonly string? requestedDirectory;
+        private readonly string? preferredSetPath;
 
         private string? songsDirectory;
         private IReadOnlyList<BeatmapLibraryEntry> entries = new List<BeatmapLibraryEntry>();
@@ -36,9 +37,15 @@ namespace OsuClient.Game.Screens.SongSelect
         private Container errorBanner = null!;
         private SpriteText errorText = null!;
 
-        public SongSelectScreen(string? songsDirectory = null)
+        /// <summary>
+        /// <paramref name="preferredSetPath"/> starts the carousel on that set
+        /// rather than the first one -- how a freshly generated map arrives
+        /// already highlighted (FRONTEND_PLAN.md Phase 7).
+        /// </summary>
+        public SongSelectScreen(string? songsDirectory = null, string? preferredSetPath = null)
         {
             requestedDirectory = songsDirectory;
+            this.preferredSetPath = preferredSetPath;
         }
 
         [BackgroundDependencyLoader]
@@ -183,7 +190,7 @@ namespace OsuClient.Game.Screens.SongSelect
 
             pathLabel.Text = songsDirectory ?? "no songs directory configured";
 
-            carousel.SetEntries(entries, emptyMessageFor());
+            carousel.SetEntries(entries, emptyMessageFor(), preferredSetPath);
             updateStatus();
         }
 
@@ -241,7 +248,7 @@ namespace OsuClient.Game.Screens.SongSelect
             if (!this.IsCurrentScreen())
                 return;
 
-            this.Push(new PlayerScreenPlaceholder(selection));
+            this.Push(new PlayerScreen(selection));
         }
 
         protected override bool OnKeyDown(KeyDownEvent e)

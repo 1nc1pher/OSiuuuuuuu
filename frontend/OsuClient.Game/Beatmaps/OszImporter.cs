@@ -47,6 +47,15 @@ namespace OsuClient.Game.Beatmaps
         /// </summary>
         public string? AudioPath { get; set; }
 
+        /// <summary>
+        /// Absolute path to a background image, if the set's folder happens to
+        /// contain one — there's no customization UI yet (see
+        /// FRONTEND_PLAN.md's Phase 6), so for now this is just whatever image
+        /// file someone dropped into the set's own folder by hand. Null if
+        /// there isn't one, or the set wasn't loaded from a directory.
+        /// </summary>
+        public string? BackgroundPath { get; set; }
+
         /// <summary>Whether the declared audio track is actually present in the set.</summary>
         public bool HasAudio =>
             AudioFilename != null &&
@@ -214,10 +223,24 @@ namespace OsuClient.Game.Beatmaps
                     set.AudioPath = audio;
             }
 
+            // Ordinal sort for the same reason difficulty order is sorted
+            // this way: deterministic across platforms, so which file wins
+            // when a set somehow has more than one image doesn't depend on
+            // filesystem enumeration order.
+            string? background = files.Where(isImageFile).OrderBy(f => f, StringComparer.Ordinal).FirstOrDefault();
+
+            if (background != null)
+                set.BackgroundPath = Path.Combine(root, background);
+
             return set;
         }
 
         // ------------------------------------------------------------------
+
+        private static readonly string[] image_extensions = { ".jpg", ".jpeg", ".png", ".bmp" };
+
+        private static bool isImageFile(string path) =>
+            image_extensions.Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
 
         private static ZipArchive openArchive(Stream stream)
         {

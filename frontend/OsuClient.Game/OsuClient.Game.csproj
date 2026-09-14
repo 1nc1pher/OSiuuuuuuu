@@ -15,6 +15,24 @@
       release from 2026.901.0 onwards is net10.0-only.
     -->
     <PackageReference Include="ppy.osu.Framework" Version="2026.807.0" />
+
+    <!--
+      osu.Framework's own font system expects fonts pre-baked into its
+      bitmap-atlas format, not raw .ttf files loaded at runtime — see
+      Graphics/RetroText.cs for why these render text directly instead.
+      SixLabors.ImageSharp itself is already an osu.Framework dependency;
+      these two add font parsing and text rasterization on top of it.
+    -->
+    <PackageReference Include="SixLabors.Fonts" Version="2.1.3" />
+    <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Retro-arcade display fonts (see Graphics/GameFonts.cs), both OFL
+      licensed — PressStart2P-OFL.txt / Audiowide-OFL.txt sit alongside them.
+    -->
+    <EmbeddedResource Include="Resources\Fonts\*.ttf" />
   </ItemGroup>
 
 </Project>

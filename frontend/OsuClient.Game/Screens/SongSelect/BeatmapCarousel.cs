@@ -86,8 +86,15 @@ namespace OsuClient.Game.Screens.SongSelect
         /// <summary>
         /// Replaces the carousel contents. <paramref name="emptyText"/> is shown
         /// when there is nothing to list.
+        ///
+        /// <paramref name="preferredSetPath"/> selects that set's first
+        /// difficulty instead of the list's — how a just-generated map arrives
+        /// already highlighted rather than leaving the player to hunt for it
+        /// (FRONTEND_PLAN.md Phase 7). A path that isn't in the list falls back
+        /// to the usual first entry.
         /// </summary>
-        public void SetEntries(IReadOnlyList<BeatmapLibraryEntry> entries, string emptyText)
+        public void SetEntries(IReadOnlyList<BeatmapLibraryEntry> entries, string emptyText,
+                               string? preferredSetPath = null)
         {
             panels.Clear();
             icons.Clear();
@@ -103,11 +110,63 @@ namespace OsuClient.Game.Screens.SongSelect
             scroll.ScrollToStart(false);
 
             // Start on the first playable difficulty so the details panel and
-            // the Enter shortcut have something to act on immediately.
-            var firstIcon = icons.FirstOrDefault();
+            // the Enter shortcut have something to act on immediately — or on
+            // the requested set's first difficulty when there is one.
+            var startIcon = findFirstIcon(preferredSetPath) ?? icons.FirstOrDefault();
 
-            if (firstIcon != null)
-                Select(firstIcon, false);
+            if (startIcon == null)
+                return;
+
+            Select(startIcon, false);
+
+            // Scrolling to it has to wait for a layout pass: the panels were
+            // added a moment ago and every child is still at position zero, so
+            // scrolling now silently lands back at the top — which looks
+            // exactly like the highlight having failed.
+            if (startIcon != icons.FirstOrDefault())
+                ScheduleAfterChildren(() => scroll.ScrollIntoView(startIcon));
+        }
+
+        /// <summary>
+        /// The first difficulty icon belonging to a set, or null when no set
+        /// was asked for or nothing matches it.
+        ///
+        /// Matched by set name rather than by path, because the two sides name
+        /// the same set differently: the backend reports the folder it wrote
+        /// (<c>…/Artist - Title</c>), while <see cref="BeatmapLibrary"/> lists
+        /// that set by its <c>.osz</c> (<c>…/Artist - Title.osz</c>) and skips
+        /// the folder as a duplicate. Comparing full paths silently never
+        /// matches.
+        /// </summary>
+        private DifficultyIcon? findFirstIcon(string? setPath)
+        {
+            if (string.IsNullOrWhiteSpace(setPath))
+                return null;
+
+            string target = SetNameOf(setPath);
+
+            return icons.FirstOrDefault(icon =>
+                entriesByIcon.TryGetValue(icon, out var entry)
+                && !string.IsNullOrEmpty(entry.Path)
+                && string.Equals(SetNameOf(entry.Path), target, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// The set name a path refers to: the folder's own name, or the
+        /// <c>.osz</c>'s name without the extension. Public so the equivalence
+        /// the highlight depends on can be tested directly.
+        /// </summary>
+        public static string SetNameOf(string path)
+        {
+            string trimmed = path.TrimEnd(System.IO.Path.DirectorySeparatorChar,
+                                           System.IO.Path.AltDirectorySeparatorChar);
+            string name = System.IO.Path.GetFileName(trimmed);
+
+            // Only the packaging extension is stripped: a set titled
+            // "Song v1.5" is a folder name with a dot in it, not an extension.
+            return name.EndsWith(".osz", StringComparison.OrdinalIgnoreCase)
+                ? name[..^4]
+                : name;
         }
 
         private Drawable createPanel(BeatmapLibraryEntry entry)

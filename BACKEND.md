@@ -37,6 +37,11 @@ audio file
    v
 [6] .osu / .osz export                  <- src/export/osu_writer.py [DONE]
     (full pipeline: src/main.py)
+   |
+   v
+[7] analysis.json + spectrogram.png     <- src/export/analysis_export.py [DONE]
+    (what the DSP saw, for the frontend's
+     visualization; skip with --no-analysis)
 ```
 
 ## Project structure
@@ -63,7 +68,8 @@ osu-dsp-project/
 │   │   └── difficulty.py          # per-tier parameter tables + build_map (STEP 5)
 │   ├── export/
 │   │   ├── __init__.py
-│   │   └── osu_writer.py      # renders .osu v14 + packages .osz  (STEP 6)
+│   │   ├── osu_writer.py      # renders .osu v14 + packages .osz  (STEP 6)
+│   │   └── analysis_export.py # analysis.json + spectrogram.png   (STEP 7)
 │   └── main.py                 # full audio -> .osz CLI            (STEP 6)
 ├── data/
 │   ├── raw/                    # put input audio files here (.mp3/.wav/.ogg)
@@ -82,6 +88,7 @@ osu-dsp-project/
 - [x] Step 4: Hit-object classification + placement
 - [x] Step 5: Difficulty scaling
 - [x] Step 6: `.osu` / `.osz` export + end-to-end CLI
+- [x] Step 7: `analysis.json` + `spectrogram.png` export (frontend visualization)
 
 **All six steps are implemented.** `pytest` runs 64 tests across every stage.
 
@@ -552,3 +559,85 @@ record has the right field count for its type.
 **4. Manual (the real test)** -- drag `data/output/<Artist> - <Song>.osz`
 onto osu!(lazer). It refuses to import a malformed file, so a clean import
 + a playable map is the end-to-end confirmation.
+
+## Running Step 7 (analysis export)
+
+Nothing to run on its own: `src/main.py` writes both artifacts at the end
+of a normal run, into the beatmap folder it just produced.
+
+```
+python src/main.py data/raw/song.mp3
+# ... Beatmap folder: data/output/Artist - Song
+#     Analysis data:  data/output/Artist - Song/analysis.json  (324 KB)
+
+python src/main.py data/raw/song.mp3 --no-analysis   # skip both files
+```
+
+Both sit *beside* the `.osu` files rather than inside the `.osz` -- the
+packaged set is written before this step runs, so importing into
+osu!(lazer) is unaffected by anything here.
+
+**`spectrogram.png`** -- the same mel spectrogram `src/audio/visualize.py`
+computes, saved as a plain image: no axes, no title, no colorbar. That
+figure is a developer readout; this copy is a game asset. Two things it
+does differently, both tuned against real songs rather than guessed:
+
+- Columns are max-pooled down to at most 2048, since the frontend
+  stretches the image across a screen-width panel and a six-minute track
+  has 15,000-plus frames. Max rather than mean because the bright
+  single-frame streaks *are* the percussive onsets -- averaging blurs
+  away the one feature the image exists to show.
+- The colour scale is pinned to a fixed -45..0 dB window instead of
+  auto-scaling per image. Max-pooling lifts the floor, which washes a
+  real song out to near-uniform pink with every streak technically
+  present and none of them visible; pinning it also means brightness
+  means the same thing from one map to the next.
+
+**`analysis.json`** -- the numbers behind the map, which the `.osu`
+format has nowhere to put:
+
+```json
+{
+  "version": 1,
+  "track":   { "name": "...", "duration": 219.15, "sampleRate": 22050 },
+  "onsetSource": "Expert",
+  "onsets":  [ { "time": 1.416, "strength": 0.626, "band": "low" } ],
+  "beatGrid": { "bpm": 137.85, "offset": 0.42, "confidence": 0.73,
+                "beatTimes": [ ... ] },
+  "hitObjects": { "Easy": [ { "kind": "circle", "time": 1.375,
+                              "x": 230.2, "y": 153.6, "strength": 0.626,
+                              "band": "low", "snap": "1/1" } ] }
+}
+```
+
+`strength`, `band` and `snap` are the provenance fields -- *why* a given
+onset became the object it did -- and are the reason the file exists at
+all. Detection sensitivity is per tier, so there is no single "the" onset
+list: `onsets` comes from whichever tier detected the most, and
+`onsetSource` records which one that was.
+
+Times are rounded to the millisecond and positions to a tenth of an
+osu!pixel, which roughly halves the file for digits nothing downstream
+can use. A real 3m39s track at all five tiers writes ~324 KB.
+
+## Testing the analysis export
+
+```
+pytest tests/test_analysis_export.py -v
+```
+
+**1. Unit tests** on the pure parts -- the record builders (every field
+present, provenance preserved, no `endTime` on a circle) and the
+spectrogram downsampling (stays within the width cap, and a lone bright
+frame survives a 40x reduction).
+
+**2. Round-trip integration** -- run a real `build_map()`, export, read
+the JSON back, and check the onsets, BPM, beat times and every placed
+object match what the pipeline produced. The PNG is checked to be a real
+PNG by its magic bytes and width by its IHDR, rather than pulling in an
+image library for two assertions.
+
+**3. Size ceiling** -- a six-minute track at five tiers, asserted to stay
+well under a few MB. This is the check that settled whether the frontend
+can read the whole file at once (it can); if a future change makes the
+file balloon, that test is where it shows up.

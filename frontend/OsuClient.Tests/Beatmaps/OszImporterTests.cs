@@ -270,6 +270,80 @@ namespace OsuClient.Tests.Beatmaps
         }
 
         [Test]
+        public void BackgroundImageInTheSetFolderIsResolved()
+        {
+            string folder = Path.Combine(tempDirectory, "Test Artist - Test Song");
+            Directory.CreateDirectory(folder);
+
+            File.WriteAllText(Path.Combine(folder, "Test Artist - Test Song (osu-dsp-generator) [Hard].osu"),
+                TestBeatmapFixtures.BackendGenerated);
+            File.WriteAllBytes(Path.Combine(folder, "audio.mp3"), new byte[] { 0xFF, 0xFB });
+            File.WriteAllBytes(Path.Combine(folder, "cover.jpg"), new byte[] { 1, 2, 3 });
+
+            var set = OszImporter.LoadFromDirectory(folder);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(set.BackgroundPath, Is.Not.Null);
+                Assert.That(File.Exists(set.BackgroundPath!), Is.True);
+                Assert.That(Path.GetFileName(set.BackgroundPath!), Is.EqualTo("cover.jpg"));
+            });
+        }
+
+        [Test]
+        public void SetWithNoImageHasNoBackgroundPath()
+        {
+            string folder = Path.Combine(tempDirectory, "Test Artist - Test Song");
+            Directory.CreateDirectory(folder);
+
+            File.WriteAllText(Path.Combine(folder, "Test Artist - Test Song (osu-dsp-generator) [Hard].osu"),
+                TestBeatmapFixtures.BackendGenerated);
+
+            var set = OszImporter.LoadFromDirectory(folder);
+
+            Assert.That(set.BackgroundPath, Is.Null);
+        }
+
+        [Test]
+        public void BackgroundImageResolutionIsCaseInsensitiveAndAcceptsSeveralFormats()
+        {
+            foreach (string extension in new[] { ".jpg", ".JPEG", ".png", ".Bmp" })
+            {
+                string folder = Path.Combine(tempDirectory, $"Set {extension}");
+                Directory.CreateDirectory(folder);
+
+                File.WriteAllText(Path.Combine(folder, "Set (osu-dsp-generator) [Hard].osu"),
+                    TestBeatmapFixtures.BackendGenerated);
+                File.WriteAllBytes(Path.Combine(folder, "cover" + extension), new byte[] { 1 });
+
+                var set = OszImporter.LoadFromDirectory(folder);
+
+                Assert.That(set.BackgroundPath, Is.Not.Null, $"extension {extension} was not picked up");
+            }
+        }
+
+        [Test]
+        public void MultipleImagesPickTheSameOneEveryTime()
+        {
+            string folder = Path.Combine(tempDirectory, "Test Artist - Test Song");
+            Directory.CreateDirectory(folder);
+
+            File.WriteAllText(Path.Combine(folder, "Test Artist - Test Song (osu-dsp-generator) [Hard].osu"),
+                TestBeatmapFixtures.BackendGenerated);
+            File.WriteAllBytes(Path.Combine(folder, "zzz.png"), new byte[] { 1 });
+            File.WriteAllBytes(Path.Combine(folder, "aaa.png"), new byte[] { 1 });
+
+            string? first = OszImporter.LoadFromDirectory(folder).BackgroundPath;
+            string? second = OszImporter.LoadFromDirectory(folder).BackgroundPath;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(first, Is.EqualTo(second), "picking a background isn't deterministic");
+                Assert.That(Path.GetFileName(first!), Is.EqualTo("aaa.png"));
+            });
+        }
+
+        [Test]
         public void FolderWithNoOsuFilesIsRejected()
         {
             Assert.Throws<OszImportException>(() => OszImporter.LoadFromDirectory(tempDirectory));

@@ -7,3 +7,7 @@ data/
 # .NET build artifacts (frontend/)
 bin/
 obj/
+
+# context from the actual game
+
+visualization From OSU! lazer/

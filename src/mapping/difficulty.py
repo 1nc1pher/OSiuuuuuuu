@@ -202,6 +202,23 @@ def build_map(track: AudioTrack, preset: DifficultyPreset, seed: int = 0) -> tup
     (objects, grid). The beat grid does not depend on difficulty, but we
     return it because Step 6 needs it for the timing point.
     """
+    _, objs, grid = build_map_detailed(track, preset, seed=seed)
+    return objs, grid
+
+
+def build_map_detailed(track: AudioTrack, preset: DifficultyPreset,
+                        seed: int = 0) -> tuple:
+    """
+    Exactly build_map(), but also returns the Step 2 onsets it detected:
+    (onsets, objects, grid).
+
+    Step 2's result is normally consumed and dropped -- only the placed
+    objects survive into the .osu file, which has nowhere to record what
+    was detected or how strongly. The analysis export
+    (src/export/analysis_export.py, FRONTEND_PLAN.md Phase 7) is the one
+    caller that wants it, and detection is a full pass over the audio, so
+    it gets handed the pass this run already did rather than repeating it.
+    """
     onsets = detect_onsets(track, margin=preset.onset_margin,
                             delta=preset.onset_delta)
     grid = track_beats(track)
@@ -222,7 +239,7 @@ def build_map(track: AudioTrack, preset: DifficultyPreset, seed: int = 0) -> tup
                     distance_spacing=preset.distance_spacing,
                     max_turn_degrees=preset.max_turn_degrees,
                     seed=seed)
-    return objs, grid
+    return onsets, objs, grid
 
 
 def build_all_difficulties(track: AudioTrack, seed: int = 0) -> dict:

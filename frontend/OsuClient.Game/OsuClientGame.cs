@@ -1,7 +1,9 @@
 using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Shapes;
+using osu.Framework.Platform;
 using osu.Framework.Screens;
+using OsuClient.Game.Graphics.Cursor;
 using OsuClient.Game.Screens.MainMenu;
 using osuTK.Graphics;
 
@@ -44,6 +46,7 @@ namespace OsuClient.Game
                 {
                     RelativeSizeAxes = Axes.Both,
                 },
+                new GameCursor(),
             };
         }
 
@@ -52,6 +55,15 @@ namespace OsuClient.Game
             base.LoadComplete();
 
             screenStack.Push(new MainMenuScreen(songsDirectory));
+        }
+
+        public override void SetHost(GameHost host)
+        {
+            base.SetHost(host);
+
+            // The glowing orb replaces the OS pointer everywhere in the game.
+            if (host.Window != null)
+                host.Window.CursorState |= CursorState.Hidden;
         }
     }
 }

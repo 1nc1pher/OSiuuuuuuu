@@ -7,6 +7,7 @@ using osu.Framework.Input.Events;
 using osu.Framework.Platform;
 using osu.Framework.Screens;
 using OsuClient.Game.Graphics;
+using OsuClient.Game.Screens.Generation;
 using OsuClient.Game.Screens.SongSelect;
 using osuTK;
 using osuTK.Graphics;
@@ -69,6 +70,16 @@ namespace OsuClient.Game.Screens.MainMenu
                         Anchor = Anchor.TopCentre,
                         Origin = Anchor.TopCentre,
                         Size = new Vector2(240, 46),
+                        Text = "Generate",
+                        BackgroundColour = new Color4(0.2f, 0.5f, 0.3f, 1f),
+                        HoverColour = new Color4(0.26f, 0.65f, 0.4f, 1f),
+                        Action = pushUpload,
+                    },
+                    new BasicButton
+                    {
+                        Anchor = Anchor.TopCentre,
+                        Origin = Anchor.TopCentre,
+                        Size = new Vector2(240, 46),
                         Text = "Exit",
                         BackgroundColour = new Color4(0.35f, 0.2f, 0.2f, 1f),
                         HoverColour = new Color4(0.5f, 0.26f, 0.26f, 1f),
@@ -91,6 +102,12 @@ namespace OsuClient.Game.Screens.MainMenu
         {
             if (this.IsCurrentScreen())
                 this.Push(new SongSelectScreen(songsDirectory));
+        }
+
+        private void pushUpload()
+        {
+            if (this.IsCurrentScreen())
+                this.Push(new UploadScreen(songsDirectory));
         }
 
         protected override bool OnKeyDown(KeyDownEvent e)
