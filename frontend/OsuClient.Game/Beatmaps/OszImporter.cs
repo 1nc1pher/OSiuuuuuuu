@@ -237,7 +237,7 @@ namespace OsuClient.Game.Beatmaps
 
         // ------------------------------------------------------------------
 
-        private static readonly string[] image_extensions = { ".jpg", ".jpeg", ".png", ".bmp" };
+        private static readonly string[] image_extensions = { ".jpg", ".jpeg", ".png", ".bmp", ".webp" };
 
         private static bool isImageFile(string path) =>
             image_extensions.Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase));

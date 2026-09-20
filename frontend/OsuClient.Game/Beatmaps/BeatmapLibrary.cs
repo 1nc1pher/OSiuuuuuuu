@@ -52,6 +52,16 @@ namespace OsuClient.Game.Beatmaps
         /// <summary>Difficulties in the set, empty for a failed entry.</summary>
         public IReadOnlyList<Beatmap> Difficulties => Set?.Beatmaps ?? Array.Empty<Beatmap>();
 
+        /// <summary>
+        /// Absolute path to the set's cover image, or null when it has none.
+        ///
+        /// Only sets loaded from an unpacked folder can have one — a set read
+        /// straight out of a <c>.osz</c> never extracts to disk, so there's no
+        /// path to hand out. Song select treats null as "draw the procedural
+        /// fallback", not as an error.
+        /// </summary>
+        public string? BackgroundPath => Set?.BackgroundPath;
+
         public override string ToString() =>
             IsValid ? $"{DisplayName} ({Difficulties.Count} difficulties)" : $"{DisplayName} (failed: {Error})";
     }
@@ -69,6 +79,31 @@ namespace OsuClient.Game.Beatmaps
     {
         /// <summary>Overrides the songs directory when set.</summary>
         public const string SongsDirectoryEnvironmentVariable = "OSUCLIENT_SONGS_DIR";
+
+        /// <summary>
+        /// The set name a path refers to: the folder's own name, or the
+        /// <c>.osz</c>'s name without the extension.
+        ///
+        /// Exists because the two sides name the same set differently. The
+        /// backend reports the folder it wrote (<c>…/Artist - Title</c>),
+        /// while <see cref="Load"/> lists that set by its <c>.osz</c>
+        /// (<c>…/Artist - Title.osz</c>) and skips the folder as a duplicate.
+        /// Comparing full paths therefore silently never matches — the only
+        /// symptom being song select sitting on the wrong song — so anything
+        /// resolving "which set is this path" compares these instead.
+        /// </summary>
+        public static string SetNameOf(string path)
+        {
+            string trimmed = path.TrimEnd(System.IO.Path.DirectorySeparatorChar,
+                                          System.IO.Path.AltDirectorySeparatorChar);
+            string name = System.IO.Path.GetFileName(trimmed);
+
+            // Only the packaging extension is stripped: a set titled
+            // "Song v1.5" is a folder name with a dot in it, not an extension.
+            return name.EndsWith(".osz", StringComparison.OrdinalIgnoreCase)
+                ? name[..^4]
+                : name;
+        }
 
         /// <summary>Files that mark the repository root when walking upwards.</summary>
         private static readonly string[] repository_markers = { "FRONTEND_PLAN.md", "BACKEND.md" };

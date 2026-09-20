@@ -298,6 +298,80 @@ namespace OsuClient.Tests.Beatmaps
         }
 
         [Test]
+        public void EntrySurfacesItsSetsBackgroundPath()
+        {
+            string folder = Path.Combine(songs, "Artist - With Cover");
+            Directory.CreateDirectory(folder);
+
+            File.WriteAllText(Path.Combine(folder, "Artist - With Cover [Hard].osu"),
+                TestBeatmapFixtures.BackendGenerated);
+            File.WriteAllBytes(Path.Combine(folder, "cover.jpg"), new byte[] { 1, 2, 3 });
+
+            var entry = BeatmapLibrary.Load(songs).Single();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(entry.BackgroundPath, Is.Not.Null);
+                Assert.That(File.Exists(entry.BackgroundPath!), Is.True);
+            });
+        }
+
+        [Test]
+        public void BrokenEntryHasNoBackgroundPathRatherThanThrowing()
+        {
+            File.WriteAllText(Path.Combine(songs, "broken.osz"), "not a zip");
+
+            var entry = BeatmapLibrary.Load(songs).Single();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(entry.IsValid, Is.False);
+                Assert.That(entry.BackgroundPath, Is.Null);
+            });
+        }
+
+        // ------------------------------------------------------------------
+        // Set naming
+        //
+        // These exist because the obvious implementation is silently wrong.
+        // The backend reports the folder it wrote; Load lists that same set by
+        // its .osz and skips the folder as a duplicate. A path comparison
+        // between the two therefore never matches, and the only symptom is
+        // song select sitting on the wrong song — no error, nothing in a log.
+        // It cost a full end-to-end run to notice.
+        // ------------------------------------------------------------------
+
+        [Test]
+        public void AFolderAndItsOszNameTheSameSet()
+        {
+            Assert.Multiple(() =>
+            {
+                Assert.That(BeatmapLibrary.SetNameOf(@"D:\out\unknown artist - bad_apple"),
+                    Is.EqualTo("unknown artist - bad_apple"));
+
+                Assert.That(BeatmapLibrary.SetNameOf(@"D:\out\unknown artist - bad_apple.osz"),
+                    Is.EqualTo("unknown artist - bad_apple"));
+
+                Assert.That(BeatmapLibrary.SetNameOf(@"D:\out\unknown artist - bad_apple\"),
+                    Is.EqualTo("unknown artist - bad_apple"));
+            });
+        }
+
+        [Test]
+        public void ADotInTheTitleIsNotTreatedAsAnExtension()
+        {
+            // Only ".osz" is packaging; everything else is part of the name.
+            Assert.Multiple(() =>
+            {
+                Assert.That(BeatmapLibrary.SetNameOf(@"D:\out\artist - song v1.5"),
+                    Is.EqualTo("artist - song v1.5"));
+
+                Assert.That(BeatmapLibrary.SetNameOf(@"D:\out\artist - song v1.5.osz"),
+                    Is.EqualTo("artist - song v1.5"));
+            });
+        }
+
+        [Test]
         public void DefaultDirectoryPointsAtDataOutputWhenRunningInsideTheRepository()
         {
             // The test binary lives under frontend/OsuClient.Tests/bin/..., so the

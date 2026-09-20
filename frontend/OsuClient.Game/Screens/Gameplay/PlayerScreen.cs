@@ -95,6 +95,11 @@ namespace OsuClient.Game.Screens.Gameplay
         private PauseOverlay pauseOverlay = null!;
         private KeyTimingBar firstKeyBar = null!;
         private KeyTimingBar secondKeyBar = null!;
+        private SkipOverlay skipOverlay = null!;
+        private PerformanceOverlay performanceOverlay = null!;
+
+        /// <summary>Gaps in the map with nothing to hit — see <see cref="BreakPeriods"/>.</summary>
+        private readonly List<BreakPeriod> breaks;
 
         private int spawnIndex;
         private bool completed;
@@ -136,6 +141,8 @@ namespace OsuClient.Game.Screens.Gameplay
                 comboColourIndices[i] = colourIndex;
             }
 
+            breaks = BreakPeriods.Compute(hitObjects, Beatmap.Difficulty.ApproachRate, Beatmap.Difficulty.OverallDifficulty);
+
             // Enough silence up front for the first object's approach circle to
             // play out in full before the audio reaches it.
             double leadIn = Math.Max(1000, JudgementProcessor.Preempt(Beatmap.Difficulty.ApproachRate) + 500);
@@ -161,6 +168,12 @@ namespace OsuClient.Game.Screens.Gameplay
 
         /// <summary>Milliseconds into the audio track. Negative during the lead-in.</summary>
         public double GameplayTime => gameplayClock.CurrentTime;
+
+        /// <summary>Whether the skip prompt for a long gap is currently shown. Exposed for tests.</summary>
+        public bool SkipOverlayVisible => skipOverlay.State.Value == Visibility.Visible;
+
+        /// <summary>Whether the current-performance readout for a short gap is currently shown. Exposed for tests.</summary>
+        public bool PerformanceOverlayVisible => performanceOverlay.State.Value == Visibility.Visible;
 
         [BackgroundDependencyLoader]
         private void load()
@@ -286,6 +299,10 @@ namespace OsuClient.Game.Screens.Gameplay
                         },
                     },
                 },
+                // Above the HUD, below the pause menu: one gap in the map at a
+                // time is ever active, so only one of these two is ever shown.
+                skipOverlay = new SkipOverlay(performSkip),
+                performanceOverlay = new PerformanceOverlay(),
                 // Above the HUD: while paused it covers everything, and while
                 // hidden it takes no input at all.
                 pauseOverlay = new PauseOverlay(
@@ -378,6 +395,7 @@ namespace OsuClient.Game.Screens.Gameplay
 
             updateHealth(time);
             updateProgress(time);
+            updateBreakState(time);
             beatFlash.SetTime(time);
             backgroundPulse.SetTime(time);
 
@@ -397,7 +415,11 @@ namespace OsuClient.Game.Screens.Gameplay
             double previous = lastDrainTime ?? time;
             lastDrainTime = time;
 
-            if (completed || time < Beatmap.FirstHitObjectTime || time > Beatmap.LastHitObjectTime)
+            // No draining during a break either — there's nothing on screen
+            // to have missed, the same reason osu! itself holds HP steady
+            // through one.
+            if (completed || time < Beatmap.FirstHitObjectTime || time > Beatmap.LastHitObjectTime
+                || FindBreak(time) != null)
             {
                 healthBar.SetHealth(healthProcessor.Health);
                 return;
@@ -417,6 +439,70 @@ namespace OsuClient.Game.Screens.Gameplay
             double span = Beatmap.LastHitObjectTime - start;
 
             progressBar.SetProgress(span > 0 ? (time - start) / span : 0);
+        }
+
+        /// <summary>The break covering <paramref name="time"/>, if any — at most one ever can.</summary>
+        private BreakPeriod? FindBreak(double time)
+        {
+            foreach (var candidate in breaks)
+            {
+                if (candidate.Contains(time))
+                    return candidate;
+            }
+
+            return null;
+        }
+
+        /// <summary>Shows whichever overlay the current gap calls for, or neither once it's passed.</summary>
+        private void updateBreakState(double time)
+        {
+            var active = FindBreak(time);
+
+            if (active is not BreakPeriod current)
+            {
+                skipOverlay.Hide();
+                performanceOverlay.Hide();
+                return;
+            }
+
+            if (current.Kind == BreakKind.Skip)
+            {
+                performanceOverlay.Hide();
+                skipOverlay.Show();
+                skipOverlay.SetRemaining(current.RemainingFraction(time));
+            }
+            else
+            {
+                skipOverlay.Hide();
+                performanceOverlay.Show();
+                performanceOverlay.UpdateStats(scoreProcessor);
+            }
+        }
+
+        /// <summary>
+        /// Jumps straight to the end of the current skippable break, if
+        /// there is one — a no-op otherwise, so binding it unconditionally to
+        /// a key press is safe.
+        /// </summary>
+        private void performSkip()
+        {
+            if (paused || completed)
+                return;
+
+            var active = FindBreak(gameplayClock.CurrentTime);
+
+            if (active is not { Kind: BreakKind.Skip } current)
+                return;
+
+            gameplayClock.Seek(current.End);
+            track?.Seek(current.End);
+
+            // Otherwise the next frame's health drain would see a jump of up
+            // to 100ms of "elapsed" time across a gap nothing could be missed
+            // in.
+            lastDrainTime = current.End;
+
+            skipOverlay.Hide();
         }
 
         private Vector2 cursorPosition() =>
@@ -715,6 +801,15 @@ namespace OsuClient.Game.Screens.Gameplay
 
             if (paused)
                 return true;
+
+            // osu!'s own break-skip binding. A no-op outside a skippable
+            // break, so it's safe to always claim the key rather than only
+            // while the prompt happens to be showing.
+            if (e.Key == Key.Space)
+            {
+                performSkip();
+                return true;
+            }
 
             if (!e.Repeat && GameplayKeyBindings.ColumnFor(e.Key) is HitKeyColumn column)
             {

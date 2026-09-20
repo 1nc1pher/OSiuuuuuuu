@@ -1,0 +1,216 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="c03604bf-cad5-4201-8a3a-5f8dd5da075c" name="Arafat Inan@LAPTOP-741RB0M6 2026-09-19 18:27:30" runUser="LAPTOP-741RB0M6\Arafat Inan" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-19T18:27:30.4469801+06:00" queuing="2026-09-19T18:27:30.4469805+06:00" start="2026-09-19T18:27:28.6378183+06:00" finish="2026-09-19T18:27:30.4521844+06:00" />
+  <TestSettings name="default" id="b1c242db-1b93-4345-8055-63b214d0fd40">
+    <Deployment runDeploymentRoot="Arafat_Inan_LAPTOP-741RB0M6_2026-09-19_18_27_30" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="9202388e-f402-4393-9224-7d6b74e3719d" testId="c5cc2599-dd4c-255b-7626-7d3b2457a1ff" testName="SettingTheSamePathTwiceIsIgnored" computerName="LAPTOP-741RB0M6" duration="00:00:00.1208190" startTime="2026-09-19T18:27:30.1129207+06:00" endTime="2026-09-19T18:27:30.2337399+06:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9202388e-f402-4393-9224-7d6b74e3719d">
+      <Output>
+        <StdOut>[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udca8 Class: TestSceneCarouselBackground&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd36 Test:  SettingTheSamePathTwiceIsIgnored&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #1 create background&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #2 loaded&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #3 set twice&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #4 settle 0/10&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: ✔️ 10 repetitions&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #5 still alive&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: ✅ TestSceneCarouselBackground completed</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="1ef6cc18-e0f0-4d95-a280-7c91ee6d4ea3" testId="6007f05b-47c5-bf11-3f8e-f5742facc870" testName="RapidChangesWhileLoadingDoNotThrow" computerName="LAPTOP-741RB0M6" duration="00:00:00.2639320" startTime="2026-09-19T18:27:29.8489321+06:00" endTime="2026-09-19T18:27:30.1128642+06:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1ef6cc18-e0f0-4d95-a280-7c91ee6d4ea3">
+      <Output>
+        <StdOut>[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udca8 Class: TestSceneCarouselBackground&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd36 Test:  RapidChangesWhileLoadingDoNotThrow&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #1 create background&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #2 loaded&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #3 change background four times in one frame&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #4 let the loads settle 0/10&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: ✔️ 10 repetitions&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #5 change again afterwards&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #6 let that settle too 0/10&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: ✔️ 10 repetitions&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #7 still alive&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: ✅ TestSceneCarouselBackground completed</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="1f790563-6f8c-4a89-a57f-c25bda56b58a" testId="a39f7910-bd8a-628a-7f1e-ca9c87da280c" testName="MissingAndNullPathsAreHandled" computerName="LAPTOP-741RB0M6" duration="00:00:00.1456740" startTime="2026-09-19T18:27:29.7031361+06:00" endTime="2026-09-19T18:27:29.8488097+06:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1f790563-6f8c-4a89-a57f-c25bda56b58a">
+      <Output>
+        <StdOut>[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udca8 Class: TestSceneCarouselBackground&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd36 Test:  MissingAndNullPathsAreHandled&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #1 create background&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #2 loaded&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #3 no background&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #4 settle 0/5&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: ✔️ 5 repetitions&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #5 path that does not exist&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #6 settle 0/5&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: ✔️ 5 repetitions&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #7 then a real one&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udca5 Failed&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: ⏳ Currently loading components (0)&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83e\uddf5 Task schedulers&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: LoadComponentsAsync (standard) concurrency:4 running:0 pending:0&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: LoadComponentsAsync (long load) concurrency:4 running:0 pending:0&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83c\udfb1 Thread pool&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: threads:         7&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: work pending:    0&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: work completed:  28&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: worker:          min 16     max 32,767 available 32,765&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: completion:      min 1      max 1,000  available 1,000</StdOut>
+        <ErrorInfo>
+          <Message>System.IO.DirectoryNotFoundException : Could not find a part of the path 'C:\Users\Arafat Inan\AppData\Local\Temp\OsuClientBackgrounds_vayyc3yb.54o\real.jpg'.</Message>
+          <StackTrace>   at Microsoft.Win32.SafeHandles.SafeFileHandle.CreateFile(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options)&#xD;
+   at Microsoft.Win32.SafeHandles.SafeFileHandle.Open(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize, Nullable`1 unixCreateMode)&#xD;
+   at System.IO.Strategies.OSFileStreamStrategy..ctor(String path, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize, Nullable`1 unixCreateMode)&#xD;
+   at System.IO.Strategies.FileStreamHelpers.ChooseStrategyCore(String path, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize, Nullable`1 unixCreateMode)&#xD;
+   at System.IO.File.Create(String path)&#xD;
+   at SixLabors.ImageSharp.IO.LocalFileSystem.Create(String path)&#xD;
+   at SixLabors.ImageSharp.ImageExtensions.Save(Image source, String path, IImageEncoder encoder)&#xD;
+   at SixLabors.ImageSharp.ImageExtensions.SaveAsJpeg(Image source, String path, JpegEncoder encoder)&#xD;
+   at SixLabors.ImageSharp.ImageExtensions.SaveAsJpeg(Image source, String path)&#xD;
+   at OsuClient.Tests.Visual.TestSceneCarouselBackground.WriteImage(String name) in D:\osu-dsp-project\frontend\OsuClient.Tests\Visual\TestSceneCarouselBackground.cs:line 56&#xD;
+   at OsuClient.Tests.Visual.TestSceneCarouselBackground.&lt;MissingAndNullPathsAreHandled&gt;b__7_2() in D:\osu-dsp-project\frontend\OsuClient.Tests\Visual\TestSceneCarouselBackground.cs:line 115&#xD;
+   at osu.Framework.Testing.Drawables.Steps.SingleStepButton.clickAction()&#xD;
+   at osu.Framework.Testing.Drawables.Steps.StepButton.PerformStep(Boolean userTriggered)&#xD;
+   at osu.Framework.Testing.TestScene.runNextStep(Action onCompletion, Action`2 onError, Func`2 stopCondition)&#xD;
+--- End of stack trace from previous location ---&#xD;
+   at osu.Framework.Testing.TestSceneTestRunner.TestRunner.RunTestBlocking(TestScene test)&#xD;
+   at osu.Framework.Testing.TestSceneTestRunner.RunTestBlocking(TestScene test)&#xD;
+   at osu.Framework.Testing.TestScene.UseTestSceneRunnerAttribute.AfterTest(ITest test)&#xD;
+   at NUnit.Framework.Internal.Commands.TestActionCommand.&lt;&gt;c__DisplayClass0_0.&lt;.ctor&gt;b__1(TestExecutionContext context)&#xD;
+   at NUnit.Framework.Internal.Commands.BeforeAndAfterTestCommand.&lt;&gt;c__DisplayClass1_0.&lt;Execute&gt;b__1()&#xD;
+   at NUnit.Framework.Internal.Commands.DelegatingTestCommand.RunTestMethodInThreadAbortSafeZone(TestExecutionContext context, Action action)
+</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="1ea972d1-b2cb-4f0b-97a4-c5f6ed69b15a" testId="8c84f0b0-789a-aac9-03bc-e2149f61877f" testName="TestConstructor" computerName="LAPTOP-741RB0M6" duration="00:00:00.1464090" startTime="2026-09-19T18:27:29.5556446+06:00" endTime="2026-09-19T18:27:29.7020025+06:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1ea972d1-b2cb-4f0b-97a4-c5f6ed69b15a">
+      <Output>
+        <StdOut>[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd08 BASS initialised&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: BASS version:           2.4.17.48&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: BASS FX version:        2.4.12.16&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: BASS MIX version:       2.4.12.10&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: Device:                 No sound&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: Driver:&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: Device period length:   0&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: Device buffer length:   10 ms&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: Update period:          5 ms&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: Playback buffer length: 100 ms&#xD;
+[performance] 2026-09-19 12:27:29 [verbose]: TextureAtlas initialised (1024x1024)&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udca8 Class: TestSceneCarouselBackground&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd36 Test:  TestConstructor&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: ✅ TestSceneCarouselBackground completed</StdOut>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="RapidChangesWhileLoadingDoNotThrow" storage="d:\osu-dsp-project\frontend\osuclient.tests\bin\debug\net8.0\osuclient.tests.dll" id="6007f05b-47c5-bf11-3f8e-f5742facc870">
+      <Execution id="1ef6cc18-e0f0-4d95-a280-7c91ee6d4ea3" />
+      <TestMethod codeBase="D:\osu-dsp-project\frontend\OsuClient.Tests\bin\Debug\net8.0\OsuClient.Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="OsuClient.Tests.Visual.TestSceneCarouselBackground" name="RapidChangesWhileLoadingDoNotThrow" />
+    </UnitTest>
+    <UnitTest name="SettingTheSamePathTwiceIsIgnored" storage="d:\osu-dsp-project\frontend\osuclient.tests\bin\debug\net8.0\osuclient.tests.dll" id="c5cc2599-dd4c-255b-7626-7d3b2457a1ff">
+      <Execution id="9202388e-f402-4393-9224-7d6b74e3719d" />
+      <TestMethod codeBase="D:\osu-dsp-project\frontend\OsuClient.Tests\bin\Debug\net8.0\OsuClient.Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="OsuClient.Tests.Visual.TestSceneCarouselBackground" name="SettingTheSamePathTwiceIsIgnored" />
+    </UnitTest>
+    <UnitTest name="TestConstructor" storage="d:\osu-dsp-project\frontend\osuclient.tests\bin\debug\net8.0\osuclient.tests.dll" id="8c84f0b0-789a-aac9-03bc-e2149f61877f">
+      <Execution id="1ea972d1-b2cb-4f0b-97a4-c5f6ed69b15a" />
+      <TestMethod codeBase="D:\osu-dsp-project\frontend\OsuClient.Tests\bin\Debug\net8.0\OsuClient.Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="OsuClient.Tests.Visual.TestSceneCarouselBackground" name="TestConstructor" />
+    </UnitTest>
+    <UnitTest name="MissingAndNullPathsAreHandled" storage="d:\osu-dsp-project\frontend\osuclient.tests\bin\debug\net8.0\osuclient.tests.dll" id="a39f7910-bd8a-628a-7f1e-ca9c87da280c">
+      <Execution id="1f790563-6f8c-4a89-a57f-c25bda56b58a" />
+      <TestMethod codeBase="D:\osu-dsp-project\frontend\OsuClient.Tests\bin\Debug\net8.0\OsuClient.Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="OsuClient.Tests.Visual.TestSceneCarouselBackground" name="MissingAndNullPathsAreHandled" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="c5cc2599-dd4c-255b-7626-7d3b2457a1ff" executionId="9202388e-f402-4393-9224-7d6b74e3719d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6007f05b-47c5-bf11-3f8e-f5742facc870" executionId="1ef6cc18-e0f0-4d95-a280-7c91ee6d4ea3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a39f7910-bd8a-628a-7f1e-ca9c87da280c" executionId="1f790563-6f8c-4a89-a57f-c25bda56b58a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8c84f0b0-789a-aac9-03bc-e2149f61877f" executionId="1ea972d1-b2cb-4f0b-97a4-c5f6ed69b15a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="4" executed="4" passed="3" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>NUnit Adapter 4.5.0.0: Test execution started&#xD;
+Running selected tests in D:\osu-dsp-project\frontend\OsuClient.Tests\bin\Debug\net8.0\OsuClient.Tests.dll&#xD;
+   NUnit3TestExecutor discovered 4 of 4 NUnit test cases using Current Discovery mode, Non-Explicit run&#xD;
+NUnit Adapter 4.5.0.0: Test execution complete&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="LAPTOP-741RB0M6" outcome="Warning" timestamp="2026-09-19T18:27:29.7234346+06:00">
+        <Text>[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd08 BASS initialised&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: BASS version:           2.4.17.48&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: BASS FX version:        2.4.12.16&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: BASS MIX version:       2.4.12.10&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: Device:                 No sound&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: Driver:&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: Device period length:   0&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: Device buffer length:   10 ms&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: Update period:          5 ms&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: Playback buffer length: 100 ms&#xD;
+[performance] 2026-09-19 12:27:29 [verbose]: TextureAtlas initialised (1024x1024)&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udca8 Class: TestSceneCarouselBackground&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd36 Test:  TestConstructor&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: ✅ TestSceneCarouselBackground completed&#xD;
+</Text>
+      </RunInfo>
+      <RunInfo computerName="LAPTOP-741RB0M6" outcome="Warning" timestamp="2026-09-19T18:27:29.8510470+06:00">
+        <Text>[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udca8 Class: TestSceneCarouselBackground&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd36 Test:  MissingAndNullPathsAreHandled&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #1 create background&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #2 loaded&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #3 no background&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #4 settle 0/5&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: ✔️ 5 repetitions&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #5 path that does not exist&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #6 settle 0/5&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: ✔️ 5 repetitions&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #7 then a real one&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udca5 Failed&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: ⏳ Currently loading components (0)&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83e\uddf5 Task schedulers&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: LoadComponentsAsync (standard) concurrency:4 running:0 pending:0&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: LoadComponentsAsync (long load) concurrency:4 running:0 pending:0&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83c\udfb1 Thread pool&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: threads:         7&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: work pending:    0&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: work completed:  28&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: worker:          min 16     max 32,767 available 32,765&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: completion:      min 1      max 1,000  available 1,000&#xD;
+</Text>
+      </RunInfo>
+      <RunInfo computerName="LAPTOP-741RB0M6" outcome="Warning" timestamp="2026-09-19T18:27:30.1142212+06:00">
+        <Text>[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udca8 Class: TestSceneCarouselBackground&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd36 Test:  RapidChangesWhileLoadingDoNotThrow&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #1 create background&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #2 loaded&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #3 change background four times in one frame&#xD;
+[runtime] 2026-09-19 12:27:29 [verbose]: \ud83d\udd38 Step #4 let the loads settle 0/10&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: ✔️ 10 repetitions&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #5 change again afterwards&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #6 let that settle too 0/10&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: ✔️ 10 repetitions&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #7 still alive&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: ✅ TestSceneCarouselBackground completed&#xD;
+</Text>
+      </RunInfo>
+      <RunInfo computerName="LAPTOP-741RB0M6" outcome="Warning" timestamp="2026-09-19T18:27:30.2345247+06:00">
+        <Text>[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udca8 Class: TestSceneCarouselBackground&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd36 Test:  SettingTheSamePathTwiceIsIgnored&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #1 create background&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #2 loaded&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #3 set twice&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #4 settle 0/10&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: ✔️ 10 repetitions&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: \ud83d\udd38 Step #5 still alive&#xD;
+[runtime] 2026-09-19 12:27:30 [verbose]: ✅ TestSceneCarouselBackground completed&#xD;
+</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

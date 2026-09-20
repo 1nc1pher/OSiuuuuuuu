@@ -567,7 +567,7 @@ namespace OsuClient.Game.Screens.Generation
 
             stopPreviewAudio();
 
-            this.Push(new SongSelectScreen(songsDirectory, beatmapFolder));
+            this.Push(new RetroSongSelectScreen(songsDirectory, beatmapFolder));
         }
 
         protected override bool OnKeyDown(KeyDownEvent e)

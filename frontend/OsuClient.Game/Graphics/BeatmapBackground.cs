@@ -7,6 +7,7 @@ using osu.Framework.Graphics.Sprites;
 using osu.Framework.Graphics.Textures;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace OsuClient.Game.Graphics
 {
@@ -26,13 +27,21 @@ namespace OsuClient.Game.Graphics
     public partial class BeatmapBackground : Sprite
     {
         private readonly string? path;
+        private readonly bool greyscale;
 
         [Resolved]
         private IRenderer renderer { get; set; } = null!;
 
-        public BeatmapBackground(string? path)
+        /// <param name="greyscale">
+        /// Drains the colour out of the image as it is decoded. The main menu
+        /// shows a grey copy and a colour copy of the same wallpaper at once
+        /// and reveals between them, so this is done here on the pixels
+        /// rather than with a shader.
+        /// </param>
+        public BeatmapBackground(string? path, bool greyscale = false)
         {
             this.path = path;
+            this.greyscale = greyscale;
 
             RelativeSizeAxes = Axes.Both;
             Anchor = Anchor.Centre;
@@ -49,6 +58,9 @@ namespace OsuClient.Game.Graphics
             try
             {
                 var image = Image.Load<Rgba32>(path);
+
+                if (greyscale)
+                    image.Mutate(context => context.Grayscale());
 
                 var texture = renderer.CreateTexture(image.Width, image.Height);
                 texture.SetData(new TextureUpload(image));

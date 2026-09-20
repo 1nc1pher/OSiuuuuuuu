@@ -1,9 +1,8 @@
 using System;
 using osu.Framework.Graphics;
-using osu.Framework.Graphics.Colour;
 using osu.Framework.Graphics.Containers;
-using osu.Framework.Graphics.Shapes;
 using OsuClient.Game.Beatmaps;
+using OsuClient.Game.Graphics;
 using osuTK.Graphics;
 
 namespace OsuClient.Game.Screens.Gameplay.HUD
@@ -13,10 +12,10 @@ namespace OsuClient.Game.Screens.Gameplay.HUD
     /// pulsing once per beat — an ambient sense of the track's tempo that sits
     /// behind the playfield rather than a HUD element in its own right.
     ///
-    /// Each side is a plain gradient box pinned to its edge, a smooth full
-    /// strength-to-nothing fade across <paramref name="reach"/> — no outline,
-    /// no shape, just a flash of colour, sized to slightly overlap the key
-    /// overlay's own bars rather than stopping short of them.
+    /// The drawing is <see cref="EdgeGlow"/>'s — a gradient box pinned to
+    /// each edge, sized to slightly overlap the key overlay's own bars rather
+    /// than stopping short of them. What lives here is the beat maths that
+    /// drives it.
     ///
     /// Brightness is driven purely by <see cref="SetTime"/> every frame rather
     /// than by scheduling a transform per beat: a beat count over a long map
@@ -36,13 +35,11 @@ namespace OsuClient.Game.Screens.Gameplay.HUD
         private const double pulse_sharpness = 4;
 
         private static readonly Color4 flash_colour = new Color4(0.5f, 0.85f, 1f, 1f);
-        private static readonly Color4 transparent = new Color4(0.5f, 0.85f, 1f, 0f);
 
         private readonly Beatmap beatmap;
         private readonly float peakAlpha;
 
-        private readonly Box left;
-        private readonly Box right;
+        private readonly EdgeGlow glow;
 
         /// <summary>
         /// Lets a future settings screen switch the effect off entirely
@@ -68,33 +65,11 @@ namespace OsuClient.Game.Screens.Gameplay.HUD
 
             RelativeSizeAxes = Axes.Both;
 
-            InternalChildren = new Drawable[]
-            {
-                left = new Box
-                {
-                    Anchor = Anchor.CentreLeft,
-                    Origin = Anchor.CentreLeft,
-                    RelativeSizeAxes = Axes.Y,
-                    Width = reach,
-                    Alpha = 0,
-                    Blending = BlendingParameters.Additive,
-                    Colour = ColourInfo.GradientHorizontal(flash_colour, transparent),
-                },
-                right = new Box
-                {
-                    Anchor = Anchor.CentreRight,
-                    Origin = Anchor.CentreRight,
-                    RelativeSizeAxes = Axes.Y,
-                    Width = reach,
-                    Alpha = 0,
-                    Blending = BlendingParameters.Additive,
-                    Colour = ColourInfo.GradientHorizontal(transparent, flash_colour),
-                },
-            };
+            InternalChild = glow = new EdgeGlow(reach) { GlowColour = flash_colour };
         }
 
         /// <summary>Current brightness of both sides, 0 to <see cref="peakAlpha"/>. Exposed for tests.</summary>
-        public float Brightness => left.Alpha;
+        public float Brightness => glow.Intensity;
 
         /// <summary>
         /// Sets how bright each side is for <paramref name="time"/>: a smooth
@@ -106,7 +81,7 @@ namespace OsuClient.Game.Screens.Gameplay.HUD
         {
             if (!Enabled)
             {
-                left.Alpha = right.Alpha = 0;
+                glow.Intensity = 0;
                 return;
             }
 
@@ -114,7 +89,7 @@ namespace OsuClient.Game.Screens.Gameplay.HUD
             double pulse = BeatPulse.IntensityAt(phase, pulse_sharpness);
             double envelope = BeatPulse.PlayableEnvelope(beatmap, time);
 
-            left.Alpha = right.Alpha = (float)(peakAlpha * pulse * envelope);
+            glow.Intensity = (float)(peakAlpha * pulse * envelope);
         }
     }
 }

@@ -1,11 +1,6 @@
-using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
 using osu.Framework.Audio;
 using osu.Framework.Audio.Sample;
-using osu.Framework.IO.Stores;
 
 namespace OsuClient.Game.Audio
 {
@@ -43,30 +38,5 @@ namespace OsuClient.Game.Audio
 
         /// <summary>The lighter tick sound, for a collected slider tick or repeat.</summary>
         public void PlayTick() => tickSample?.Play();
-
-        /// <summary>A byte-array resource store backed by an in-memory dictionary, so no disk or embedded resource is needed.</summary>
-        private sealed class InMemorySampleStore : IResourceStore<byte[]>
-        {
-            private readonly Dictionary<string, byte[]> data;
-
-            public InMemorySampleStore(Dictionary<string, byte[]> data)
-            {
-                this.data = data;
-            }
-
-            public byte[] Get(string name) => data.TryGetValue(name, out var bytes) ? bytes : null!;
-
-            public Task<byte[]> GetAsync(string name, CancellationToken cancellationToken = default) =>
-                Task.FromResult(Get(name));
-
-            public Stream GetStream(string name) =>
-                data.TryGetValue(name, out var bytes) ? new MemoryStream(bytes) : null!;
-
-            public IEnumerable<string> GetAvailableResources() => data.Keys;
-
-            public void Dispose()
-            {
-            }
-        }
     }
 }

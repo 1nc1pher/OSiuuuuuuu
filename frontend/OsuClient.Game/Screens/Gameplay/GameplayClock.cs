@@ -63,5 +63,15 @@ namespace OsuClient.Game.Screens.Gameplay
 
             manual.CurrentTime = time;
         }
+
+        /// <summary>
+        /// Hard-jumps to a new time, bypassing the usual drift smoothing —
+        /// for skipping a break rather than easing toward it frame by frame.
+        /// The caller is responsible for seeking the audio track to the same
+        /// time; <see cref="Advance"/> will pick up and hold that position
+        /// from the very next frame, since drift between the two will be
+        /// ~0 immediately after both are seeked together.
+        /// </summary>
+        public void Seek(double time) => manual.CurrentTime = time;
     }
 }

@@ -307,7 +307,7 @@ namespace OsuClient.Tests.Beatmaps
         [Test]
         public void BackgroundImageResolutionIsCaseInsensitiveAndAcceptsSeveralFormats()
         {
-            foreach (string extension in new[] { ".jpg", ".JPEG", ".png", ".Bmp" })
+            foreach (string extension in new[] { ".jpg", ".JPEG", ".png", ".Bmp", ".webp" })
             {
                 string folder = Path.Combine(tempDirectory, $"Set {extension}");
                 Directory.CreateDirectory(folder);
