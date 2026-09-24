@@ -15,7 +15,7 @@ WHAT WE WRITE
   [Editor]    - editor hints (harmless defaults)
   [Metadata]  - title / artist / creator / difficulty name
   [Difficulty]- HP / CS / OD / AR / SliderMultiplier  (from the Step 5 preset)
-  [Events]    - empty (no background / storyboard)
+  [Events]    - the cover art as background, when one was given (no storyboard)
   [TimingPoints] - ONE uninherited (red) line: the Step 3 tempo + offset
   [HitObjects]   - one line per circle / slider / spinner from Step 4
 
@@ -70,6 +70,7 @@ class OsuMetadata:
     tags: str = "dsp generated procedural"
     audio_filename: str = "audio.mp3"
     preview_time: int = -1         # ms, -1 = let osu! pick
+    background: str = ""           # cover image in the set folder, "" = none
 
 
 # ------------------------------------------------------------------
@@ -196,6 +197,12 @@ def render_beatmap(objects, grid, metadata: OsuMetadata,
     lines += [
         "[Events]",
         "//Background and Video events",
+    ]
+    # osu!'s background event: type 0, start time 0, the file (quoted),
+    # then an x/y offset. Every client that reads [Events] shows it.
+    if metadata.background:
+        lines += [f'0,0,"{metadata.background}",0,0']
+    lines += [
         "//Break Periods",
         "//Storyboard Layer 0 (Background)",
         "//Storyboard Layer 1 (Fail)",
@@ -236,8 +243,12 @@ def _safe(name: str) -> str:
     return _UNSAFE.sub("_", name).strip().rstrip(".") or "map"
 
 
+COVER_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp")
+
+
 def build_beatmap_set(out_root: str, audio_path: str, metadata: OsuMetadata,
-                       difficulties: list, make_osz: bool = True) -> dict:
+                       difficulties: list, make_osz: bool = True,
+                       osz_root: str = None, cover_path: str = None) -> dict:
     """
     Assemble a beatmap folder and (optionally) zip it into an .osz.
 
@@ -249,6 +260,13 @@ def build_beatmap_set(out_root: str, audio_path: str, metadata: OsuMetadata,
             {"name": str, "objects": [...], "grid": BeatGrid,
              "difficulty_section": {...}}
         make_osz: also write "<artist> - <title>.osz"
+        cover_path: an image to use as the set's cover art; copied into the
+            folder as "cover.<ext>", named as the background in every .osu,
+            and packed into the .osz. None = no cover.
+        osz_root: directory the .osz goes in; defaults to out_root. The CLI
+            keeps it apart from the folders, because the frontend's library
+            lists a set by its .osz when both share a directory -- and a set
+            read out of a zip has no audio on disk to play.
 
     Returns:
         {"folder": path, "osu_files": [paths], "osz": path or None}
@@ -265,7 +283,23 @@ def build_beatmap_set(out_root: str, audio_path: str, metadata: OsuMetadata,
     if os.path.abspath(dest_audio) != os.path.abspath(audio_path):
         shutil.copyfile(audio_path, dest_audio)
 
-    base_meta = replace(metadata, audio_filename=audio_name)
+    cover_name = ""
+    if cover_path:
+        if not os.path.isfile(cover_path):
+            raise FileNotFoundError(cover_path)
+        ext = os.path.splitext(cover_path)[1].lower()
+        if ext not in COVER_EXTENSIONS:
+            raise ValueError(f"cover art must be one of {', '.join(COVER_EXTENSIONS)}: {cover_path}")
+        # A fixed name, so a re-run with a different image replaces the
+        # old one instead of leaving two covers in the folder.
+        for old in COVER_EXTENSIONS:
+            stale = os.path.join(folder, "cover" + old)
+            if os.path.isfile(stale):
+                os.remove(stale)
+        cover_name = "cover" + ext
+        shutil.copyfile(cover_path, os.path.join(folder, cover_name))
+
+    base_meta = replace(metadata, audio_filename=audio_name, background=cover_name)
 
     osu_files = []
     for d in difficulties:
@@ -278,9 +312,13 @@ def build_beatmap_set(out_root: str, audio_path: str, metadata: OsuMetadata,
 
     osz_path = None
     if make_osz:
-        osz_path = os.path.join(out_root, set_name + ".osz")
+        osz_root = osz_root or out_root
+        os.makedirs(osz_root, exist_ok=True)
+        osz_path = os.path.join(osz_root, set_name + ".osz")
         with zipfile.ZipFile(osz_path, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.write(dest_audio, audio_name)
+            if cover_name:
+                zf.write(os.path.join(folder, cover_name), cover_name)
             for path in osu_files:
                 zf.write(path, os.path.basename(path))
 

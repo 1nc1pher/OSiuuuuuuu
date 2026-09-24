@@ -107,5 +107,46 @@ namespace OsuClient.Game.Audio
 
             return stream.ToArray();
         }
+
+        /// <summary>
+        /// Two channels, interleaved. For sounds that move across the stereo
+        /// field, which a mono sample could only do with a live pan the
+        /// framework would have to animate.
+        /// </summary>
+        public static byte[] EncodeStereo(float[] left, float[] right, int sampleRate)
+        {
+            if (left.Length != right.Length)
+                throw new ArgumentException("channels differ in length");
+
+            using var stream = new MemoryStream();
+            using var writer = new BinaryWriter(stream);
+
+            int byteRate = sampleRate * 4;
+            int dataSize = left.Length * 4;
+
+            writer.Write("RIFF"u8.ToArray());
+            writer.Write(36 + dataSize);
+            writer.Write("WAVE"u8.ToArray());
+
+            writer.Write("fmt "u8.ToArray());
+            writer.Write(16);
+            writer.Write((short)1); // PCM
+            writer.Write((short)2); // stereo
+            writer.Write(sampleRate);
+            writer.Write(byteRate);
+            writer.Write((short)4); // block align
+            writer.Write((short)16); // bits per sample
+
+            writer.Write("data"u8.ToArray());
+            writer.Write(dataSize);
+
+            for (int i = 0; i < left.Length; i++)
+            {
+                writer.Write((short)(Math.Clamp(left[i], -1f, 1f) * short.MaxValue));
+                writer.Write((short)(Math.Clamp(right[i], -1f, 1f) * short.MaxValue));
+            }
+
+            return stream.ToArray();
+        }
     }
 }

@@ -1,0 +1,73 @@
+{
+  "comment": "Shared reference for the dsp.json curve format. Asserted against by tests/test_curve_pack.py and by OsuClient.Tests/Backend/CurveDataTests.cs. Regenerate only when the format is deliberately changed.",
+  "levels": {
+    "float32": 1.0,
+    "uint16": 65535.0,
+    "uint8": 255.0
+  },
+  "values": [
+    0.0,
+    0.01,
+    0.0,
+    2.5,
+    0.0,
+    0.00980392156862745,
+    0.0196078431372549,
+    0.014705882352941176,
+    1.2450980392156863,
+    1.25,
+    1.1,
+    1.1,
+    1.1,
+    1.1,
+    0.4,
+    0.8,
+    1.2,
+    1.6,
+    2.0,
+    2.0,
+    1.6,
+    1.2,
+    0.8,
+    0.4,
+    0.0,
+    2.4999,
+    0.0001,
+    0.9,
+    0.3,
+    0.6,
+    0.15
+  ],
+  "cases": [
+    {
+      "encoding": "float32",
+      "packed": {
+        "scale": 1.0,
+        "encoding": "float32",
+        "count": 31,
+        "data": "AAAAAArXIzwAAAAAAAAgQAAAAAChoCA8oaCgPPHwcDxfX58/AACgP83MjD/NzIw/zcyMP83MjD/NzMw+zcxMP5qZmT/NzMw/AAAAQAAAAEDNzMw/mpmZP83MTD/NzMw+AAAAAF3+H0AXt9E4ZmZmP5qZmT6amRk/mpkZPg=="
+      },
+      "tolerance": 1e-06
+    },
+    {
+      "encoding": "uint16",
+      "packed": {
+        "scale": 2.5,
+        "encoding": "uint16",
+        "count": 31,
+        "data": "AAAGAQAA//8AAAEBAgKCAX9/AICjcKNwo3CjcPYo61HhetajzMzMzNaj4XrrUfYoAAD8/wMAKVy4HnA9XA8="
+      },
+      "tolerance": 3.8147554741741054e-05
+    },
+    {
+      "encoding": "uint8",
+      "packed": {
+        "scale": 2.5,
+        "encoding": "uint8",
+        "count": 31,
+        "data": "AAEA/wABAgJ/gHBwcHApUnqjzMyjelIpAP8AXB89Dw=="
+      },
+      "tolerance": 0.00980392156862745
+    }
+  ]
+}

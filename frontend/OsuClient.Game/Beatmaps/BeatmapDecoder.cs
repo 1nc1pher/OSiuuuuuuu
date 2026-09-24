@@ -79,6 +79,13 @@ namespace OsuClient.Game.Beatmaps
             // promise about it. Collect them and resolve after the whole file.
             var pendingSliders = new List<SliderData>();
 
+            // A fingerprint of the map, for high scores: two maps are the
+            // same map only if their content is. Taken over the meaningful
+            // lines, trimmed, so line endings, a byte-order mark or comments
+            // do not make one map into two.
+            using var fingerprint = System.Security.Cryptography.IncrementalHash.CreateHash(
+                System.Security.Cryptography.HashAlgorithmName.SHA256);
+
             string? raw;
 
             while ((raw = reader.ReadLine()) != null)
@@ -89,6 +96,8 @@ namespace OsuClient.Game.Beatmaps
 
                 if (line.Length == 0 || line.StartsWith("//", StringComparison.Ordinal))
                     continue;
+
+                fingerprint.AppendData(Encoding.UTF8.GetBytes(line + '\n'));
 
                 if (!headerSeen)
                 {
@@ -137,8 +146,12 @@ namespace OsuClient.Game.Beatmaps
                                 pendingSliders.Add(slider);
                             break;
 
-                        // [Editor], [Events], [Colours] and anything else carry
-                        // nothing this client needs yet.
+                        case "Events":
+                            parseEvent(beatmap, line);
+                            break;
+
+                        // [Editor], [Colours] and anything else carry nothing
+                        // this client needs yet.
                     }
                 }
                 catch (BeatmapDecodeException e)
@@ -154,6 +167,8 @@ namespace OsuClient.Game.Beatmaps
             if (!headerSeen)
                 throw new BeatmapDecodeException("empty file: no \"osu file format vN\" header found");
 
+            beatmap.ContentHash = Convert.ToHexString(fingerprint.GetHashAndReset());
+
             beatmap.TimingPoints.Sort((a, b) => a.Time.CompareTo(b.Time));
             beatmap.HitObjects.Sort((a, b) => a.StartTime.CompareTo(b.StartTime));
 
@@ -161,6 +176,30 @@ namespace OsuClient.Game.Beatmaps
                 slider.SetEndTime(slider.StartTime + beatmap.SliderDuration(slider.StartTime, slider.PixelLength, slider.Slides));
 
             return beatmap;
+        }
+
+        /// <summary>
+        /// Reads the one event this client uses, the background:
+        /// <c>0,0,"cover.png",0,0</c> — type 0 (or the word
+        /// <c>Background</c>), a start time, then the file in quotes. Breaks,
+        /// videos and storyboard sprites are all ignored.
+        /// </summary>
+        private static void parseEvent(Beatmap beatmap, string line)
+        {
+            string[] parts = line.Split(',');
+
+            if (parts.Length < 3 || beatmap.General.BackgroundFilename != null)
+                return;
+
+            string type = parts[0].Trim();
+
+            if (type != "0" && !type.Equals("Background", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            string file = parts[2].Trim().Trim('"');
+
+            if (file.Length > 0)
+                beatmap.General.BackgroundFilename = file;
         }
 
         private static string stripBom(string line, int lineNumber) =>

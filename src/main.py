@@ -13,8 +13,11 @@ Pipeline:
     [4/5] classify + place objects per tier     (src/mapping)
     [6]   render .osu files + zip an .osz       (src/export/osu_writer)
 
-The .osz lands in data/output/. Drag it onto osu!(lazer) to import and
-play-test the generated maps.
+The beatmap folder lands in data/output/ (where the frontend's song select
+reads it) and the .osz in data/OSU_beatmaps/. Drag the .osz onto
+osu!(lazer) to import and play-test the generated maps. The two are kept
+apart on purpose: when an .osz sits next to its folder, the frontend lists
+the set by the .osz, which has no audio on disk, so the song won't play.
 """
 
 import argparse
@@ -38,6 +41,8 @@ def generate_beatmap_set(audio_path: str, out_dir: str,
                           creator: str = "osu-dsp-generator",
                           difficulties=None, seed: int = 0,
                           make_osz: bool = True,
+                          osz_dir: str = None,
+                          cover_path: str = None,
                           write_analysis: bool = True,
                           on_progress=None) -> dict:
     """
@@ -57,6 +62,17 @@ def generate_beatmap_set(audio_path: str, out_dir: str,
     difficulties = difficulties or list(TIER_ORDER)
 
     def report(message):
+        """
+        Announce a stage.
+
+        THESE STRINGS ARE A CONTRACT. The frontend's progress panel parses
+        them to drive its stage lamps and its "3/5 HARD" counter -- see
+        frontend/OsuClient.Game/Screens/Generation/PipelineProgress.cs, whose
+        tests assert against copies of the exact formats below. Changing the
+        wording here does not break anything loudly: an unrecognised line is
+        simply treated as log output, so the lamps just quietly stop
+        advancing. Change both sides together.
+        """
         if on_progress is not None:
             on_progress(message)
 
@@ -68,8 +84,13 @@ def generate_beatmap_set(audio_path: str, out_dir: str,
 
     built, summary = [], []
     detected = []
+    # Kept for the analysis export: dsp.json records each tier's detector
+    # sensitivity, which is what lets the client rebuild any tier's
+    # threshold from the one median curve the file carries.
+    used_presets = {}
     for index, key in enumerate(difficulties, start=1):
         preset = get_preset(key)
+        used_presets[preset.name] = preset
         report(f"[{index}/{len(difficulties)}] Analysing and mapping {preset.name}")
         onsets, objs, grid = build_map_detailed(track, preset, seed=seed)
         built.append({
@@ -84,7 +105,8 @@ def generate_beatmap_set(audio_path: str, out_dir: str,
     report("Writing beatmap files")
     metadata = OsuMetadata(title=title, artist=artist, creator=creator)
     result = build_beatmap_set(out_dir, audio_path, metadata, built,
-                                make_osz=make_osz)
+                                make_osz=make_osz, osz_root=osz_dir,
+                                cover_path=cover_path)
     result["summary"] = summary
     result["analysis"] = None
 
@@ -100,7 +122,8 @@ def generate_beatmap_set(audio_path: str, out_dir: str,
             result["folder"], track, compute_mel_spectrogram(track),
             onsets, built[0]["grid"],
             {d["name"]: d["objects"] for d in built},
-            onset_source=onset_source)
+            onset_source=onset_source, presets=used_presets,
+            tier_onsets=dict(detected))
 
     return result
 
@@ -121,15 +144,23 @@ def main():
                          help="skip analysis.json + spectrogram.png "
                               "(the frontend's DSP visualization reads these)")
     parser.add_argument("--out-dir", default=None)
+    parser.add_argument("--cover", default=None,
+                         help="an image (.jpg/.png/.bmp) to use as the set's cover art")
+    parser.add_argument("--osz-dir", default=None,
+                         help="where the .osz goes (default data/OSU_beatmaps); "
+                              "keep it out of --out-dir or the frontend "
+                              "can't play the set")
     args = parser.parse_args()
 
     out_dir = args.out_dir or os.path.join(PROJECT_ROOT, "data", "output")
+    osz_dir = args.osz_dir or os.path.join(PROJECT_ROOT, "data", "OSU_beatmaps")
     diffs = [d.strip() for d in args.difficulties.split(",") if d.strip()]
 
     result = generate_beatmap_set(
         args.audio_path, out_dir, artist=args.artist, title=args.title,
         creator=args.creator, difficulties=diffs, seed=args.seed,
-        make_osz=not args.no_osz, write_analysis=not args.no_analysis,
+        make_osz=not args.no_osz, osz_dir=osz_dir, cover_path=args.cover,
+        write_analysis=not args.no_analysis,
         # flush: the frontend reads these lines live off a pipe, where
         # Python would otherwise buffer them until the run finished.
         on_progress=lambda message: print(message, flush=True))
@@ -142,6 +173,8 @@ def main():
     if result["analysis"]:
         analysis_kb = os.path.getsize(result["analysis"]["analysis"]) / 1024
         print(f"Analysis data:  {result['analysis']['analysis']}  ({analysis_kb:.0f} KB)")
+        dsp_kb = os.path.getsize(result["analysis"]["dsp"]) / 1024
+        print(f"DSP trace:      {result['analysis']['dsp']}  ({dsp_kb:.0f} KB)")
 
     if result["osz"]:
         size_kb = os.path.getsize(result["osz"]) / 1024

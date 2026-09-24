@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using osu.Framework.Allocation;
+using osu.Framework.Extensions.Color4Extensions;
 using osu.Framework.Audio;
 using osu.Framework.Audio.Track;
 using osu.Framework.Graphics;
@@ -16,8 +17,11 @@ using osu.Framework.Input.Events;
 using osu.Framework.IO.Stores;
 using osu.Framework.Platform;
 using osu.Framework.Screens;
+using OsuClient.Game.Audio;
 using OsuClient.Game.Backend;
 using OsuClient.Game.Graphics;
+using OsuClient.Game.Graphics.Rack;
+using OsuClient.Game.Screens.MainMenu;
 using OsuClient.Game.Screens.SongSelect;
 using osuTK;
 using osuTK.Graphics;
@@ -49,26 +53,14 @@ namespace OsuClient.Game.Screens.Generation
     /// </summary>
     public partial class DspVisualizationScreen : Screen
     {
-        /// <summary>How many of the backend's most recent output lines stay on screen while it runs.</summary>
-        private const int visible_log_lines = 10;
-
-        // Stage durations, in milliseconds. ~18s of sequence in total, inside
-        // the plan's 15-25s target: long enough to take each stage in, short
-        // enough not to be the thing standing between a player and playing.
-        private const double spectrogram_duration = 3500;
-        private const double onset_duration = 4000;
-        private const double beat_grid_duration = 3500;
-        private const double assembly_duration = 6000;
-        private const double finale_duration = 1400;
-
         /// <summary>Under the reveal, not over it — background, not a performance.</summary>
         private const double preview_volume = 0.4;
 
         private readonly BackendPaths paths;
         private readonly GenerationRequest request;
         private readonly string? songsDirectory;
+        private readonly string? wallpaper;
 
-        private readonly Queue<string> log = new Queue<string>();
         private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
 
         [Resolved]
@@ -78,22 +70,13 @@ namespace OsuClient.Game.Screens.Generation
         private GameHost host { get; set; } = null!;
 
         private Container runningView = null!;
+        private GenerationProgressPanel progressPanel = null!;
         private Container revealView = null!;
+        private DspReveal? reveal;
 
-        private SpriteText statusLabel = null!;
-        private SpriteText hintLabel = null!;
-        private FillFlowContainer logFlow = null!;
         private BasicButton backButton = null!;
 
-        private Container stageArea = null!;
-        private RetroText stageTitle = null!;
-        private RetroText stageDetail = null!;
-        private SpriteText skipHint = null!;
-
-        private SpectrogramReveal? spectrogram;
-        private OnsetSparkLayer? sparks;
-        private BeatGridReveal? beatGrid;
-        private HitObjectAssemblyPreview? assembly;
+        private readonly TapeDeckSoundPlayer sounds = new TapeDeckSoundPlayer();
 
         private Track? previewTrack;
 
@@ -104,11 +87,18 @@ namespace OsuClient.Game.Screens.Generation
         private double startTime;
         private string? beatmapFolder;
 
-        public DspVisualizationScreen(BackendPaths paths, GenerationRequest request, string? songsDirectory)
+        /// <param name="wallpaper">
+        /// The tape deck's wallpaper, so the run and the reveal sit on the same
+        /// picture the deck did rather than cutting to a flat panel. Null
+        /// falls through to MenuBackground's own gradient.
+        /// </param>
+        public DspVisualizationScreen(BackendPaths paths, GenerationRequest request, string? songsDirectory,
+                                      string? wallpaper = null)
         {
             this.paths = paths;
             this.request = request;
             this.songsDirectory = songsDirectory;
+            this.wallpaper = wallpaper;
         }
 
         /// <summary>Whether the run has ended, either way. Exposed for tests.</summary>
@@ -126,141 +116,72 @@ namespace OsuClient.Game.Screens.Generation
         [BackgroundDependencyLoader]
         private void load()
         {
+            MenuBackground background;
+
             InternalChildren = new Drawable[]
             {
+                // The deck's own backdrop — same art, same stillness, same
+                // dimming — so pressing RECORD reads as the deck getting to
+                // work, not as a jump to another screen.
+                background = new MenuBackground { Drifting = false },
                 new Box
                 {
                     RelativeSizeAxes = Axes.Both,
-                    Colour = new Color4(0.06f, 0.06f, 0.10f, 1f),
+                    Colour = new Color4(0f, 0f, 0f, 0.42f),
                 },
+                sounds,
                 runningView = createRunningView(),
-                revealView = createRevealView(),
+                revealView = new Container
+                {
+                    RelativeSizeAxes = Axes.Both,
+                    Alpha = 0,
+                    Padding = new MarginPadding { Horizontal = 40, Vertical = 30 },
+                },
             };
+
+            background.SetBackground(wallpaper);
         }
 
+        /// <summary>
+        /// The running half of the screen: a reel-to-reel transport, a row of
+        /// stage lamps driven by the backend's own output, and that output on
+        /// a printout strip (GENERATION_REDESIGN_PLAN.md step 9).
+        ///
+        /// The Back button stays outside the panel because it belongs to the
+        /// screen, not to the machine — it is how you leave, and a failed run
+        /// is the only time it appears.
+        /// </summary>
         private Container createRunningView() => new Container
         {
             RelativeSizeAxes = Axes.Both,
-            Child = new FillFlowContainer
-            {
-                Anchor = Anchor.Centre,
-                Origin = Anchor.Centre,
-                RelativeSizeAxes = Axes.X,
-                AutoSizeAxes = Axes.Y,
-                Width = 0.8f,
-                Direction = FillDirection.Vertical,
-                Spacing = new Vector2(0, 14),
-                Children = new Drawable[]
-                {
-                    new SpriteText
-                    {
-                        Anchor = Anchor.TopCentre,
-                        Origin = Anchor.TopCentre,
-                        Text = Path.GetFileName(request.AudioPath),
-                        Font = FontUsage.Default.With(size: 26),
-                        Colour = Color4.White,
-                    },
-                    statusLabel = new SpriteText
-                    {
-                        Anchor = Anchor.TopCentre,
-                        Origin = Anchor.TopCentre,
-                        Text = "Analysing…",
-                        Font = FontUsage.Default.With(size: 17),
-                        Colour = new Color4(0.55f, 0.8f, 1f, 1f),
-                    },
-                    new Container
-                    {
-                        Anchor = Anchor.TopCentre,
-                        Origin = Anchor.TopCentre,
-                        RelativeSizeAxes = Axes.X,
-                        Height = 200,
-                        Masking = true,
-                        CornerRadius = 6,
-                        Children = new Drawable[]
-                        {
-                            new Box
-                            {
-                                RelativeSizeAxes = Axes.Both,
-                                Colour = new Color4(0.04f, 0.04f, 0.07f, 1f),
-                            },
-                            logFlow = new FillFlowContainer
-                            {
-                                RelativeSizeAxes = Axes.X,
-                                AutoSizeAxes = Axes.Y,
-                                Direction = FillDirection.Vertical,
-                                Padding = new MarginPadding(12),
-                                Spacing = new Vector2(0, 2),
-                            },
-                        },
-                    },
-                    hintLabel = new SpriteText
-                    {
-                        Anchor = Anchor.TopCentre,
-                        Origin = Anchor.TopCentre,
-                        Text = "Escape to cancel",
-                        Font = FontUsage.Default.With(size: 13),
-                        Colour = new Color4(0.55f, 0.55f, 0.65f, 1f),
-                    },
-                    backButton = new BasicButton
-                    {
-                        Anchor = Anchor.TopCentre,
-                        Origin = Anchor.TopCentre,
-                        Size = new Vector2(220, 40),
-                        Text = "Back",
-                        BackgroundColour = new Color4(0.28f, 0.28f, 0.36f, 1f),
-                        HoverColour = new Color4(0.38f, 0.38f, 0.48f, 1f),
-                        Alpha = 0,
-                        Action = () => this.Exit(),
-                    },
-                },
-            },
-        };
-
-        private Container createRevealView() => new Container
-        {
-            RelativeSizeAxes = Axes.Both,
-            Alpha = 0,
             Padding = new MarginPadding { Horizontal = 40, Vertical = 32 },
             Children = new Drawable[]
             {
-                new FillFlowContainer
+                new Container
                 {
                     RelativeSizeAxes = Axes.Both,
-                    Direction = FillDirection.Vertical,
-                    Spacing = new Vector2(0, 10),
-                    Children = new Drawable[]
+                    // Room at the bottom for the Back button, made here
+                    // because CompositeDrawable.Padding is protected.
+                    Padding = new MarginPadding { Bottom = 56 },
+                    Child = progressPanel = new GenerationProgressPanel(Path.GetFileName(request.AudioPath))
                     {
-                        stageTitle = new RetroText
-                        {
-                            Font = RetroFontFamily.Display,
-                            TextSize = 18,
-                            Colour = new Color4(0.85f, 0.9f, 1f, 1f),
-                            Text = string.Empty,
-                        },
-                        stageDetail = new RetroText
-                        {
-                            Font = RetroFontFamily.Body,
-                            TextSize = 14,
-                            Colour = new Color4(0.62f, 0.66f, 0.78f, 1f),
-                            Text = string.Empty,
-                        },
-                        stageArea = new Container
-                        {
-                            RelativeSizeAxes = Axes.Both,
-                            // Leaves room for the two headings above and the
-                            // skip hint below, which sit outside this box.
-                            Height = 0.82f,
-                            Margin = new MarginPadding { Top = 6 },
-                        },
+                        RelativeSizeAxes = Axes.Both,
                     },
                 },
-                skipHint = new SpriteText
+                backButton = new BasicButton
                 {
-                    Anchor = Anchor.BottomRight,
-                    Origin = Anchor.BottomRight,
-                    Text = "Escape or click to skip",
-                    Font = FontUsage.Default.With(size: 12),
-                    Colour = new Color4(0.5f, 0.52f, 0.62f, 1f),
+                    Anchor = Anchor.BottomCentre,
+                    Origin = Anchor.BottomCentre,
+                    Size = new Vector2(220, 40),
+                    Text = "Back",
+                    BackgroundColour = RetroPalette.ChromeDark,
+                    HoverColour = RetroPalette.Chrome.Darken(0.2f),
+                    Alpha = 0,
+                    Action = () =>
+                    {
+                        sounds.PlayKey();
+                        this.Exit();
+                    },
                 },
             },
         };
@@ -271,19 +192,13 @@ namespace OsuClient.Game.Screens.Generation
 
             startTime = Clock.CurrentTime;
 
+            // The tape is moving for as long as the generator is: RECORD on
+            // the deck started the motor, and this is it running.
+            sounds.StartTransport();
+            progressPanel.StageAdvanced = sounds.PlayRelay;
+            progressPanel.TierAdvanced = sounds.PlayCounter;
+
             run();
-        }
-
-        protected override void Update()
-        {
-            base.Update();
-
-            if (finished)
-                return;
-
-            double elapsed = (Clock.CurrentTime - startTime) / 1000;
-
-            statusLabel.Text = $"Analysing…  {elapsed:0}s";
         }
 
         private void run()
@@ -296,7 +211,7 @@ namespace OsuClient.Game.Screens.Generation
             {
                 try
                 {
-                    var result = await runner.RunAsync(request, line => Schedule(() => appendLine(line)),
+                    var result = await runner.RunAsync(request, line => Schedule(() => progressPanel.AppendLine(line)),
                                                        cancellation.Token).ConfigureAwait(false);
 
                     Schedule(() => complete(result));
@@ -317,39 +232,22 @@ namespace OsuClient.Game.Screens.Generation
             });
         }
 
-        private void appendLine(string line)
-        {
-            if (string.IsNullOrWhiteSpace(line))
-                return;
-
-            log.Enqueue(line);
-
-            while (log.Count > visible_log_lines)
-                log.Dequeue();
-
-            logFlow.Clear();
-
-            foreach (string entry in log)
-            {
-                logFlow.Add(new SpriteText
-                {
-                    Text = entry,
-                    Font = FontUsage.Default.With(size: 13),
-                    Colour = new Color4(0.72f, 0.75f, 0.82f, 1f),
-                });
-            }
-        }
-
         private void complete(GenerationResult result)
         {
             finished = true;
             Result = result;
 
+            // The auto-stop either way; a failed run adds the refusal a
+            // moment after, once the motor has wound down.
+            sounds.StopTransport();
+            sounds.PlayAutoStop();
+
+            if (!result.Success)
+                Scheduler.AddDelayed(sounds.PlayRefuse, 380);
+
             if (!result.Success)
             {
-                statusLabel.Text = $"Generation failed (exit code {result.ExitCode})";
-                statusLabel.Colour = new Color4(1f, 0.45f, 0.45f, 1f);
-                hintLabel.Text = "The output above is the generator's own error.";
+                progressPanel.Finish(false, $"generation failed — exit code {result.ExitCode}");
                 backButton.Alpha = 1;
                 return;
             }
@@ -362,9 +260,7 @@ namespace OsuClient.Game.Screens.Generation
             // so the only sensible thing is to get out of the way.
             if (Analysis == null || !Analysis.HasContent)
             {
-                statusLabel.Text = "Done — opening song select…";
-                statusLabel.Colour = new Color4(0.4f, 0.9f, 0.5f, 1f);
-                hintLabel.Text = string.Empty;
+                progressPanel.Finish(true, "done — opening song select…");
 
                 Scheduler.AddDelayed(handOff, 700);
                 return;
@@ -377,118 +273,46 @@ namespace OsuClient.Game.Screens.Generation
         {
             sequenceStarted = true;
 
-            runningView.FadeOut(300, Easing.OutQuint);
-            revealView.FadeIn(400, Easing.OutQuint);
+            progressPanel.Finish(true, "analysis written");
 
-            spectrogram = new SpectrogramReveal(AnalysisData.FindSpectrogram(beatmapFolder),
-                                                 analysis.Track.Duration)
-            {
-                RelativeSizeAxes = Axes.Both,
-            };
-
-            sparks = new OnsetSparkLayer(analysis.Onsets, spectrogram);
-            beatGrid = new BeatGridReveal(analysis.BeatGrid, spectrogram);
-
-            spectrogram.AddOverlay(sparks);
-            spectrogram.AddOverlay(beatGrid);
-
-            stageArea.Add(spectrogram);
-
-            startPreviewAudio();
-
-            // Each stage hands to the next on a delay rather than on a
-            // completion callback: the stages deliberately overlap a little
-            // (sparks start while the wipe is still finishing), which reads as
-            // one continuous analysis instead of four separate animations.
-            stage1();
-        }
-
-        private void stage1()
-        {
-            setStage("STEP 1 — SPECTROGRAM",
-                $"{Analysis!.Track.Name} · {Analysis.Track.Duration:0}s · mel spectrogram at {Analysis.Track.SampleRate} Hz");
-
-            spectrogram!.Reveal(spectrogram_duration);
-
-            Scheduler.AddDelayed(stage2, spectrogram_duration * 0.85);
-        }
-
-        private void stage2()
-        {
-            if (handedOff)
-                return;
-
-            setStage("STEP 2 — ONSET DETECTION",
-                $"{Analysis!.Onsets.Count} onsets from spectral flux · colour is the dominant band" +
-                (string.IsNullOrEmpty(Analysis.OnsetSource) ? string.Empty : $" · {Analysis.OnsetSource} sensitivity"));
-
-            sparks!.Sweep(onset_duration);
-
-            Scheduler.AddDelayed(stage3, onset_duration);
-        }
-
-        private void stage3()
-        {
-            if (handedOff)
-                return;
-
-            setStage("STEP 3 — BEAT TRACKING",
-                $"autocorrelation over the onset envelope · {Analysis!.BeatGrid.BeatTimes.Count} beats");
-
-            beatGrid!.Sweep(beat_grid_duration);
-
-            Scheduler.AddDelayed(stage4, beat_grid_duration);
-        }
-
-        private void stage4()
-        {
-            if (handedOff)
-                return;
-
-            string tier = Analysis!.PreferredTier;
-            var objects = Analysis.ObjectsFor(tier);
-
-            setStage("STEP 4 — HIT OBJECTS",
-                $"{objects.Count} objects placed on the {tier} difficulty · snapped to the beat grid");
-
-            assembly = new HitObjectAssemblyPreview(objects)
+            reveal = new DspReveal(analysis, DspDetail.LoadFromFolder(beatmapFolder),
+                                    AnalysisData.FindSpectrogram(beatmapFolder))
             {
                 Alpha = 0,
             };
 
-            stageArea.Add(assembly);
+            reveal.Completed = handOff;
 
-            // The spectrogram steps aside rather than vanishing: the objects
-            // came from what is on it, and a cut would break that thread.
-            spectrogram!.FadeOut(600, Easing.OutQuint);
-            assembly.FadeIn(600, Easing.OutQuint);
-            assembly.Assemble(assembly_duration);
+            reveal.StageStarted = sounds.PlayRelay;
+            reveal.OnsetRevealed = onset => sounds.PlayOnset(onset.Band);
+            reveal.BeatRevealed = sounds.PlayBeat;
+            reveal.ObjectRevealed = sounds.PlayPlace;
+            reveal.FinaleReached = sounds.PlayReady;
+            reveal.Skipped = sounds.PlayFastForward;
+            reveal.ButtonPressed = sounds.PlayKey;
 
-            Scheduler.AddDelayed(finale, assembly_duration);
-        }
+            // Offered only when there is a folder to point it at.
+            if (beatmapFolder != null)
+            {
+                reveal.AnalyserRequested = () =>
+                {
+                    if (handedOff || !this.IsCurrentScreen())
+                        return;
 
-        private void finale()
-        {
-            if (handedOff)
-                return;
+                    handedOff = true;
+                    stopPreviewAudio();
 
-            int written = Analysis!.HitObjects.Count;
+                    this.Push(new Analysis.DspInspectorScreen(beatmapFolder));
+                };
+            }
 
-            setStage("MAP READY",
-                $"{written} difficult{(written == 1 ? "y" : "ies")} written · opening song select");
+            revealView.Add(reveal);
 
-            skipHint.FadeOut(300, Easing.OutQuint);
+            runningView.FadeOut(300, Easing.OutQuint);
+            revealView.FadeIn(400, Easing.OutQuint);
+            reveal.FadeIn(400, Easing.OutQuint);
 
-            Scheduler.AddDelayed(handOff, finale_duration);
-        }
-
-        private void setStage(string title, string detail)
-        {
-            stageTitle.Text = title;
-            stageDetail.Text = detail;
-
-            stageTitle.FadeInFromZero(260, Easing.OutQuint);
-            stageDetail.FadeInFromZero(340, Easing.OutQuint);
+            startPreviewAudio();
         }
 
         /// <summary>
@@ -550,12 +374,12 @@ namespace OsuClient.Game.Screens.Generation
             if (handedOff)
                 return;
 
-            spectrogram?.RevealImmediately();
-            sparks?.SweepImmediately();
-            beatGrid?.SweepImmediately();
-            assembly?.AssembleImmediately();
-
-            handOff();
+            // The reveal lands on its finished picture and then calls back
+            // into handOff through Completed, so there is one path out.
+            if (reveal != null)
+                reveal.SkipToEnd();
+            else
+                handOff();
         }
 
         private void handOff()
@@ -574,7 +398,9 @@ namespace OsuClient.Game.Screens.Generation
         {
             if (e.Key == osuTK.Input.Key.Escape)
             {
-                if (sequenceStarted)
+                // On the finished screen Escape is Back, to the deck: there
+                // is nothing left to skip, and PLAY is one click away.
+                if (sequenceStarted && reveal?.AtFinale != true)
                     skip();
                 else
                     this.Exit();
@@ -608,6 +434,7 @@ namespace OsuClient.Game.Screens.Generation
             // output when it finishes.
             cancelRun();
             stopPreviewAudio();
+            sounds.StopTransport();
 
             this.FadeOut(200, Easing.OutQuint);
 
@@ -617,6 +444,16 @@ namespace OsuClient.Game.Screens.Generation
         public override void OnResuming(ScreenTransitionEvent e)
         {
             base.OnResuming(e);
+
+            // Back from the analyser: the finished screen is still the place
+            // to choose from, so it stays, with PLAY and the analyser both
+            // live again.
+            if (e.Last is Analysis.DspInspectorScreen && reveal?.AtFinale == true)
+            {
+                handedOff = false;
+                startPreviewAudio();
+                return;
+            }
 
             // Coming back from song select means this run is done with; step
             // aside rather than showing a finished sequence again.

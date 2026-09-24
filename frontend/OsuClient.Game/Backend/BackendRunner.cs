@@ -22,6 +22,9 @@ namespace OsuClient.Game.Backend
 
         /// <summary>Empty runs every tier, matching the CLI's own default.</summary>
         public IReadOnlyList<string> Difficulties { get; init; } = Array.Empty<string>();
+
+        /// <summary>An image to use as the set's cover art, or null for none.</summary>
+        public string? CoverPath { get; init; }
     }
 
     /// <summary>How a run ended, and where it left the map if it worked.</summary>
@@ -91,6 +94,12 @@ namespace OsuClient.Game.Backend
             {
                 arguments.Add("--difficulties");
                 arguments.Add(string.Join(",", request.Difficulties));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.CoverPath))
+            {
+                arguments.Add("--cover");
+                arguments.Add(request.CoverPath);
             }
 
             return arguments;
@@ -247,5 +256,13 @@ namespace OsuClient.Game.Backend
         public static bool IsSupportedAudioFile(string path) =>
             !string.IsNullOrWhiteSpace(path)
             && SupportedAudioExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Images the backend accepts as cover art — the ones osu! itself shows as a background.</summary>
+        public static readonly string[] SupportedCoverExtensions = { ".jpg", ".jpeg", ".png", ".bmp" };
+
+        /// <summary>Whether a dropped or picked file can be the cover art.</summary>
+        public static bool IsSupportedCoverFile(string path) =>
+            !string.IsNullOrWhiteSpace(path)
+            && SupportedCoverExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
     }
 }

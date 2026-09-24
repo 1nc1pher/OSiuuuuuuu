@@ -9,6 +9,13 @@ namespace OsuClient.Game.Beatmaps
     public class BeatmapGeneral
     {
         public string AudioFilename { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The background image named in <c>[Events]</c> — the set's cover
+        /// art — or null when the map names none. A file name relative to
+        /// the set's folder, as osu! writes it.
+        /// </summary>
+        public string? BackgroundFilename { get; set; }
         public int AudioLeadIn { get; set; }
         public int PreviewTime { get; set; } = -1;
         public string SampleSet { get; set; } = "Normal";
@@ -112,6 +119,14 @@ namespace OsuClient.Game.Beatmaps
     {
         /// <summary>The <c>v</c> number from the <c>osu file format vN</c> header.</summary>
         public int FormatVersion { get; set; } = 14;
+
+        /// <summary>
+        /// A fingerprint of the file's content, set by the decoder. What high
+        /// scores are kept against: regenerating a song writes a different
+        /// map under the same names, and a score set on the old one does not
+        /// belong to it. Empty for a beatmap built in code rather than decoded.
+        /// </summary>
+        public string ContentHash { get; set; } = string.Empty;
 
         public BeatmapGeneral General { get; } = new BeatmapGeneral();
         public BeatmapMetadata Metadata { get; } = new BeatmapMetadata();

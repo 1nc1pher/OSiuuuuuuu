@@ -104,14 +104,21 @@ def _moving_average(x: np.ndarray, w: int) -> np.ndarray:
 
 def onset_envelope(track: AudioTrack, n_fft: int = N_FFT,
                     hop_length: int = HOP_LENGTH, n_mels: int = 128,
-                    smooth: bool = True) -> np.ndarray:
+                    smooth: bool = True, mel_db: np.ndarray = None) -> np.ndarray:
     """
     Continuous onset-strength signal (one value per STFT frame), reusing
     Step 2's spectral flux. Lightly smoothed by default so single-frame
     jitter doesn't split one beat's energy across two autocorrelation lags.
+
+    `mel_db` lets a caller hand in a spectrogram it already has rather
+    than paying for a second full pass over the audio. The analysis
+    export does exactly that -- it is given one, and this is the same
+    signal Step 3 autocorrelated, so it must be computed the same way
+    rather than approximated.
     """
-    mel_db = compute_mel_spectrogram(track, n_fft=n_fft, hop_length=hop_length,
-                                      n_mels=n_mels)
+    if mel_db is None:
+        mel_db = compute_mel_spectrogram(track, n_fft=n_fft, hop_length=hop_length,
+                                          n_mels=n_mels)
     env = normalize(spectral_flux(mel_db))
     if smooth:
         env = _moving_average(env, 3)

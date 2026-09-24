@@ -105,7 +105,168 @@ namespace OsuClient.Tests.Visual
                         },
                     },
                 },
+                // Real spectral flux out of the committed dsp.json fixture,
+                // with the Hard preset's threshold derived over it. The one
+                // check a reduction unit test cannot make: does the path
+                // render, the right way up, with the threshold visibly riding
+                // the curve's local level?
+                ["trace-graph"] = () => new TraceGraphScene(),
+                // Every part of the studio-rack kit, in every state, on one
+                // frame — four screens are built from these, so they have to
+                // be comparable side by side.
+                ["rack-kit"] = () => new RackKitScene(),
+                // The running view, driven by the exact lines the backend
+                // prints — so no Python has to run to capture it, and the
+                // frame exercises the real parse path.
+                // The tape deck, empty and loaded. The loaded one goes
+                // through ChooseFile, the same path a real drop takes.
+                ["upload-empty"] = () => UploadScene.Empty(),
+                ["upload-loaded"] = () => UploadScene.Loaded(),
+                ["upload-labelled"] = () => UploadScene.Labelled(),
+                ["upload-with-cover"] = () => UploadScene.Covered(),
+                // The pause menu on its own, shown, with all three choices.
+                ["pause-menu"] = () =>
+                {
+                    var overlay = new Game.Screens.Gameplay.PauseOverlay(null, "Ado - Show", "Hard", () => { }, () => { }, () => { });
+                    overlay.OnLoadComplete += _ => overlay.Show();
+                    return overlay;
+                },
+                // The deck with a real library song under it, muffled and
+                // slowed as the menu hands it over — run on a real audio
+                // device, which the headless tests do not have.
+                ["upload-with-music"] = () => new Game.Screens.Generation.UploadScreen(null,
+                    Game.Beatmaps.BeatmapLibrary.Load(Game.Beatmaps.BeatmapLibrary.ResolveDefaultSongsDirectory())
+                        .Select(e => e.Set?.AudioPath).FirstOrDefault(p => p != null && System.IO.File.Exists(p)),
+                    30_000),
+                ["generation-running"] = () => new GenerationProgressScene(false),
+                // The real generation screen, on the deck's wallpaper. Pointed
+                // at a file that isn't there so the backend fails in a moment
+                // and writes nothing into the song library.
+                ["generation-screen"] = () =>
+                {
+                    var paths = Game.Backend.BackendPaths.Locate(Game.Backend.BackendPaths.FindRepositoryRoot(), out _)!;
+
+                    return new Game.Screens.Generation.DspVisualizationScreen(paths,
+                        new Game.Backend.GenerationRequest
+                        {
+                            AudioPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "no such tape.mp3"),
+                            Difficulties = new[] { "Easy" },
+                        },
+                        null,
+                        Game.Graphics.WallpaperLibrary.PickRandom(
+                            Game.Graphics.WallpaperLibrary.Load(Game.Graphics.WallpaperLibrary.ResolveDefaultDirectory())));
+                },
+                ["generation-failed"] = () => new GenerationProgressScene(true),
+                // The reveal, held at each stage. A timed sequence is the one
+                // thing a single capture cannot catch on its own.
+                ["reveal-stage1"] = () => new DspRevealScene(0),
+                ["reveal-stage2"] = () => new DspRevealScene(1),
+                ["reveal-stage3"] = () => new DspRevealScene(2),
+                ["reveal-stage4"] = () => new DspRevealScene(3),
+                ["reveal-stage5"] = () => new DspRevealScene(4),
+                ["reveal-stage6"] = () => new DspRevealScene(5),
+                ["reveal-stage7"] = () => new DspRevealScene(6),
+                ["reveal-stage8"] = () => new DspRevealScene(7),
+                ["reveal-stage9"] = () => new DspRevealScene(8),
+                ["reveal-stage10"] = () => new DspRevealScene(9),
+                ["reveal-stage11"] = () => new DspRevealScene(10),
+                // The same stages on the newest generated map: five tiers,
+                // where the fixture has two.
+                ["reveal-latest-stage8"] = () => new DspRevealScene(7, latestTracedMap()),
+                ["reveal-latest-stage9"] = () => new DspRevealScene(8, latestTracedMap()),
+                // The analyser, against the committed fixture folder.
+                ["inspector"] = () => new Game.Screens.Analysis.DspInspectorScreen(
+                    System.IO.Path.Combine(
+                        Game.Beatmaps.BeatmapLibrary.FindRepositoryRoot(AppContext.BaseDirectory)
+                            ?? string.Empty,
+                        "frontend", "OsuClient.Tests", "Fixtures")),
+                // The same screen for a map that predates the trace — an
+                // actual one out of data/output, not a contrived folder. This
+                // is what every set generated before the feature looks like,
+                // and the degradation has to be looked at, not assumed.
+                ["inspector-v1-map"] = () => new Game.Screens.Analysis.DspInspectorScreen(
+                    System.IO.Path.Combine(
+                        Game.Beatmaps.BeatmapLibrary.FindRepositoryRoot(AppContext.BaseDirectory)
+                            ?? string.Empty,
+                        "data", "output", "The Chainsmokers - Closer")),
+                // The newest generated map that has a trace, which is the
+                // realistic case the fixture's two tiers can't show: five
+                // tiers in a bottom row that only fits two.
+                ["inspector-latest"] = () => new Game.Screens.Analysis.DspInspectorScreen(latestTracedMap()),
+                // The playhead's pin as it looks under the cursor or held:
+                // lit, with its time readout. A still frame cannot hover.
+                ["inspector-pin-lit"] = () =>
+                {
+                    var screen = new Game.Screens.Analysis.DspInspectorScreen(latestTracedMap());
+                    screen.OnLoadComplete += _ =>
+                    {
+                        screen.SeekToFraction(0.3);
+                        screen.PlayheadPin.Grabbed = true;
+                    };
+                    return screen;
+                },
+                // The same, with the difficulty panel scrolled to its end.
+                ["inspector-latest-scrolled"] = () =>
+                {
+                    var screen = new Game.Screens.Analysis.DspInspectorScreen(latestTracedMap());
+                    // Held at the end every frame: at load the lanes have not
+                    // been measured yet, so there is no end to scroll to.
+                    screen.OnLoadComplete += _ =>
+                    {
+                        var scroll = screen.ChildrenOfType<Game.Graphics.Rack.RackScrollContainer>().Single();
+                        scroll.OnUpdate += _ => scroll.ScrollToEnd(false);
+                    };
+                    return screen;
+                },
+                // A menu screen change, pressed after RippleScene.SettleTime:
+                // capture at SettleTime + t to see t ms into the ripple.
+                ["ripple-play"] = () => new RippleScene(play: true),
+                ["ripple-create"] = () => new RippleScene(play: false),
+                // Frozen 120 ms into the new screen's slide-in, however long
+                // it took to load. Capture any time after that.
+                ["ripple-play-arriving"] = () => new RippleScene(play: true, freezeAfterArrival: 120),
+                ["ripple-create-arriving"] = () => new RippleScene(play: false, freezeAfterArrival: 120),
+                // A results screen for a run that set a new best.
+                ["results-new-best"] = () => new Game.Screens.Results.ResultsScreen(new Game.Screens.Results.ResultsScreen.Result
+                {
+                    Title = "abo - shaw",
+                    Difficulty = "Hard",
+                    Grade = Game.Screens.Gameplay.Grade.S,
+                    Score = 1_284_630,
+                    Accuracy = 97.84,
+                    MaxCombo = 412,
+                    CountGreat = 420,
+                    CountOk = 12,
+                    CountMeh = 3,
+                    CountMiss = 1,
+                    Failed = false,
+                    NewHighScore = true,
+                    PreviousBest = 1_102_455,
+                }),
+                // Choosing a song: the record lifting off the wheel and
+                // gliding in, frozen at a moment of it, then landed, then
+                // played into the ripple.
+                ["play-cue-lift"] = () => new PlayCueScene(150),
+                ["play-cue-glide"] = () => new PlayCueScene(500),
+                ["play-cue-landed"] = () => new PlayCueScene(1300),
+                ["play-cue-launch"] = () => new PlayCueScene(300, PlayCueScene.Then.Launch),
+                ["play-cue-escape"] = () => new PlayCueScene(550, PlayCueScene.Then.Escape),
                 ["retro-song-select"] = () => new Game.Screens.SongSelect.RetroSongSelectScreen(),
+                // With a best on the selected difficulty, to see the panel's
+                // readout filled in rather than waiting for a first clear.
+                ["retro-song-select-highscore"] = () =>
+                {
+                    var screen = new Game.Screens.SongSelect.RetroSongSelectScreen();
+                    screen.OnLoadComplete += _ => screen.ChildrenOfType<Game.Screens.SongSelect.SongInfoPanel>().Single()
+                        .SetHighScore(new Game.Scores.HighScore
+                        {
+                            Score = 1_284_630,
+                            Accuracy = 97.84,
+                            MaxCombo = 412,
+                            Grade = Game.Screens.Gameplay.Grade.S,
+                        });
+                    return screen;
+                },
                 // Same screen, but stepped three songs on before the capture,
                 // so a still frame can show that turning the record actually
                 // moves the selection through every panel.
@@ -212,6 +373,22 @@ namespace OsuClient.Tests.Visual
         /// the first argument is <c>--screenshot</c>. Returns a process exit
         /// code.
         /// </summary>
+        /// <summary>The newest folder in data/output with a dsp.json, or an empty path when there is none.</summary>
+        private static string latestTracedMap()
+        {
+            string? root = Game.Beatmaps.BeatmapLibrary.FindRepositoryRoot(AppContext.BaseDirectory);
+            string output = System.IO.Path.Combine(root ?? string.Empty, "data", "output");
+
+            if (!System.IO.Directory.Exists(output))
+                return string.Empty;
+
+            return new System.IO.DirectoryInfo(output).EnumerateDirectories()
+                                                     .Where(d => System.IO.File.Exists(System.IO.Path.Combine(d.FullName, "dsp.json")))
+                                                     .OrderByDescending(d => d.LastWriteTimeUtc)
+                                                     .Select(d => d.FullName)
+                                                     .FirstOrDefault() ?? string.Empty;
+        }
+
         public static int Run(string[] args)
         {
             if (args.Length < 3)

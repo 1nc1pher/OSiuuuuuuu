@@ -208,8 +208,14 @@ namespace OsuClient.Game.Screens.Generation
                 : string.Empty;
         }
 
+        /// <summary>Raised as each beat line is drawn by the sweep — not for a skip.</summary>
+        public Action? LinePlaced;
+
         private void addLine(double time, bool animate)
         {
+            if (animate)
+                LinePlaced?.Invoke();
+
             var line = new Box
             {
                 RelativeSizeAxes = Axes.Y,

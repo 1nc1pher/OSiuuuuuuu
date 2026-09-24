@@ -47,6 +47,38 @@ namespace OsuClient.Game.Graphics
         public static readonly Color4 Mint = new Color4(0.24f, 0.95f, 0.61f, 1f);
 
         // ------------------------------------------------------------------
+        // Frequency bands
+        // ------------------------------------------------------------------
+        //
+        // A different axis from the difficulty ramp below, and deliberately a
+        // different set of hues: a band says which part of the spectrum an
+        // onset came from, a tier says how hard a map is, and the two appear
+        // on screen together. Sharing a ramp between them would invite
+        // reading one as the other.
+        //
+        // These carry the whole way through the DSP reveal: the band curve, the
+        // onset spark it produced, and the hit object that spark became are
+        // all one colour, which is what makes "this frequency became this
+        // object" visible rather than merely stated.
+
+        /// <summary>20–200 Hz: kick drum and bass.</summary>
+        public static readonly Color4 BandLow = new Color4(1f, 0.42f, 0.32f, 1f);
+
+        /// <summary>200–2000 Hz: snare, vocals, most melodic content.</summary>
+        public static readonly Color4 BandMid = new Color4(0.45f, 0.95f, 0.75f, 1f);
+
+        /// <summary>2–10 kHz: hi-hats, cymbals, transients.</summary>
+        public static readonly Color4 BandHigh = new Color4(0.6f, 0.75f, 1f, 1f);
+
+        /// <summary>The colour for a band name as the backend writes it.</summary>
+        public static Color4 ForBand(string band) => band switch
+        {
+            "low" => BandLow,
+            "high" => BandHigh,
+            _ => BandMid,
+        };
+
+        // ------------------------------------------------------------------
         // Text
         // ------------------------------------------------------------------
 

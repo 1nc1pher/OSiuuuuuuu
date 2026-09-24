@@ -4,6 +4,7 @@ using osu.Framework.Audio;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Rendering;
 using osu.Framework.Input.Events;
 using osu.Framework.Platform;
 using osu.Framework.Screens;
@@ -20,7 +21,7 @@ namespace OsuClient.Game.Screens.MainMenu
 {
     /// <summary>
     /// The client's entry screen: a random song from the library playing over
-    /// a random wallpaper, with the OTO logo pulsing on its beat
+    /// a random wallpaper, with the RIMO logo pulsing on its beat
     /// (MENU_REDESIGN_PLAN.md).
     ///
     /// Clicking the logo opens the navigation strip — see
@@ -122,6 +123,16 @@ namespace OsuClient.Game.Screens.MainMenu
         [Resolved]
         private GameHost host { get; set; } = null!;
 
+        [Resolved]
+        private IRenderer renderer { get; set; } = null!;
+
+        /// <summary>The game's shared music. Null outside the game, where the menu makes its own.</summary>
+        [Resolved(CanBeNull = true)]
+        private MenuTrack? sharedMusic { get; set; }
+
+        /// <summary>The song the credit and background were last set for, to catch up after song select.</summary>
+        private string? shownSongPath;
+
         private MenuTrack menuTrack = null!;
         private MenuBackground background = null!;
         private Container logoArea = null!;
@@ -134,6 +145,41 @@ namespace OsuClient.Game.Screens.MainMenu
         private RetroText openHint = null!;
         private EdgeGlow borderFlash = null!;
         private MenuSoundPlayer sounds = null!;
+
+        /// <summary>The game's screen-change ripple. Null when the menu runs outside the game, as in tests.</summary>
+        [Resolved(CanBeNull = true)]
+        private ScreenRipple? ripple { get; set; }
+
+        /// <summary>
+        /// How long the rings get on screen before the next screen may arrive,
+        /// and how long the menu takes to reach its half-faded hold.
+        /// </summary>
+        private const double transition_lead = 380;
+
+        /// <summary>How faded the menu is while the next screen is still loading.</summary>
+        private const float leaving_hold_alpha = 0.4f;
+
+        /// <summary>How far off its edge the arriving screen starts, as a fraction of the width.</summary>
+        private const float arriving_offset = 0.22f;
+
+        private const double arrive_duration = 650;
+
+        /// <summary>
+        /// How long, once suspended, the menu holds half-faded before fading
+        /// out on its own. The arriving screen normally starts the fade sooner
+        /// itself; this is what keeps the menu on screen until it does.
+        /// </summary>
+        private const double suspended_hold = 400;
+
+        /// <summary>Whether the menu is leaving through a ripple, from the press until it is back.</summary>
+        private bool leavingThroughRipple;
+
+        /// <summary>
+        /// Frames the arriving screen draws before its slide starts: the
+        /// first is where it does its heavy setup, so the slide begins on the
+        /// one after.
+        /// </summary>
+        private const int settle_frames = 2;
 
         /// <summary>
         /// How far the screen has turned from monochrome to colour, 0 to 1.
@@ -173,9 +219,10 @@ namespace OsuClient.Game.Screens.MainMenu
             // screen's background load thread rather than on first frame.
             wallpaper = WallpaperLibrary.PickRandom(WallpaperLibrary.Load(WallpaperLibrary.ResolveDefaultDirectory()));
 
+            menuTrack = sharedMusic ?? new MenuTrack(songsDirectory);
+
             InternalChildren = new Drawable[]
             {
-                menuTrack = new MenuTrack(songsDirectory),
                 background = new MenuBackground(),
                 // Between the background and the logo: the strip has to be
                 // covered by the circle it grows out from, and an equal-depth
@@ -243,7 +290,7 @@ namespace OsuClient.Game.Screens.MainMenu
                             Origin = Anchor.Centre,
                             Font = RetroFontFamily.Display,
                             TextSize = 9,
-                            Text = "CLICK THE CIRCLE   ·   ESC TO QUIT",
+                            Text = "CLICK THE RECORD   ·   ESC TO QUIT",
                             Colour = RetroPalette.TextDim,
                         },
                         openHint = new RetroText
@@ -259,6 +306,11 @@ namespace OsuClient.Game.Screens.MainMenu
                     },
                 },
             };
+
+            // Outside the game there is no shared music, and this one is the
+            // menu's own; it has to be in the tree to load and play.
+            if (sharedMusic == null)
+                AddInternal(menuTrack);
         }
 
         protected override void LoadComplete()
@@ -272,12 +324,21 @@ namespace OsuClient.Game.Screens.MainMenu
             background.SetBackground(wallpaper ?? menuTrack.BackgroundPath);
 
             nowPlaying.SetSong(menuTrack.Title, menuTrack.Artist);
+            shownSongPath = menuTrack.Entry?.Path;
+
+            menuTrack.SongChanged += onSongChanged;
 
             spectrum.SetTrack(menuTrack);
 
             // Whatever state was asked for before the screen finished
             // loading, without animating into it.
             applyExpansion(0);
+
+            // Song select's first-visit work — covers, the text rasterizer's
+            // first run — done now, in the background, so the first PLAY is
+            // as quick as every later one. A second in, to leave the menu's
+            // own opening alone.
+            Scheduler.AddDelayed(() => SongSelectWarmup.RunOnce(renderer, songsDirectory), 1000);
         }
 
         protected override void Update()
@@ -377,6 +438,12 @@ namespace OsuClient.Game.Screens.MainMenu
         /// <summary>Closes the navigation strip. Counterpart to <see cref="Expand"/>.</summary>
         public void Collapse() => setExpanded(false);
 
+        /// <summary>Does what the PLAY button does. For test scenes, like <see cref="Expand"/>.</summary>
+        public void Play() => pushSongSelect();
+
+        /// <summary>Does what the CREATE button does. For test scenes, like <see cref="Expand"/>.</summary>
+        public void Create() => pushUpload();
+
         private void toggleExpanded()
         {
             // Only on the way open. Closing is a retreat, and a whoosh on the
@@ -454,14 +521,137 @@ namespace OsuClient.Game.Screens.MainMenu
             // music carries across instead of cutting to an unrelated track
             // the moment PLAY is pressed. Null (an empty library) leaves song
             // select to pick for itself, as it did before.
-            this.Push(new RetroSongSelectScreen(songsDirectory, menuTrack.Entry?.Path));
+            string? current = menuTrack.Entry?.Path;
+
+            // PLAY sits on the right of the strip and the songs are that way:
+            // the ripple comes in from the right.
+            leaveThrough(RippleEdge.Right, () => new RetroSongSelectScreen(songsDirectory, current));
         }
 
         private void pushUpload()
         {
-            if (this.IsCurrentScreen())
-                this.Push(new UploadScreen(songsDirectory));
+            if (!this.IsCurrentScreen())
+                return;
+
+            // CREATE is PLAY's mirror, so its ripple comes from the left.
+            // The menu's song goes with it, to play on under the deck.
+            string? audioPath = menuTrack.Entry?.Set?.AudioPath;
+            double time = menuTrack.CurrentTime;
+
+            leaveThrough(RippleEdge.Left, () => new UploadScreen(songsDirectory, audioPath, time));
         }
+
+        /// <summary>
+        /// Leaves for another screen through a ripple from
+        /// <paramref name="edge"/>, with the transition whoosh travelling the
+        /// same way.
+        ///
+        /// There is no curtain. The menu starts fading the moment the button
+        /// is pressed — in place: drifting it sideways uncovered a hard black
+        /// strip along the window edge it moved away from. The next screen loads
+        /// meanwhile, and once it has — and the rings have had a moment on
+        /// screen — it is pushed, sliding in from that edge as it fades up
+        /// while the menu finishes fading out beneath it. Loading starts at
+        /// the press rather than after, because song select reads the whole
+        /// library before it can show and that is time nobody should wait on.
+        /// </summary>
+        private void leaveThrough(RippleEdge edge, Func<Screen> next)
+        {
+            if (ripple == null)
+            {
+                this.Push(next());
+                return;
+            }
+
+            // Checked before building anything, so a second press during a
+            // ripple does not load a screen that will never be shown.
+            if (!ripple.Begin(edge))
+                return;
+
+            sounds.PlayTransition(fromRight: edge == RippleEdge.Right);
+
+            leavingThroughRipple = true;
+            double pressedAt = Time.Current;
+
+            // Partway out while the next screen loads: still there, clearly
+            // on its way. The rest happens in OnSuspending, once there is
+            // something arriving to replace it.
+            this.FadeTo(leaving_hold_alpha, transition_lead, Easing.OutQuad);
+
+            var screen = next();
+
+            LoadComponentAsync(screen, _ =>
+            {
+                double wait = Math.Max(0, transition_lead - (Time.Current - pressedAt));
+
+                Scheduler.AddDelayed(() => arrive(screen, edge), wait);
+            });
+        }
+
+        private void arrive(Screen screen, RippleEdge edge)
+        {
+            if (!this.IsCurrentScreen())
+            {
+                ripple?.End();
+                return;
+            }
+
+            float start = -awayFrom(edge) * DrawWidth * arriving_offset;
+
+            screen.X = start;
+            this.Push(screen);
+
+            // Held at its starting point — off the ripple's edge, all but
+            // invisible — until it has drawn a couple of ordinary frames.
+            // Song select does heavy work on its first frame (the wheel, the
+            // preview track); a slide started at the push was mostly gone by
+            // the time that frame ended, and it simply appeared in place.
+            int frames = 0;
+
+            void beginWhenSettled(Drawable arriving)
+            {
+                frames++;
+
+                if (frames == 1)
+                {
+                    // Here rather than straight after the push: the push
+                    // completes, and the screen's own OnEntering starts its
+                    // fade, a moment later — which then ran over the hold.
+                    // Not quite zero: a drawable at Alpha 0 is not present,
+                    // stops updating, and would never get to its slide.
+                    arriving.ClearTransforms();
+                    arriving.X = start;
+                    arriving.Alpha = 0.01f;
+                    return;
+                }
+
+                // Waiting only for the one long frame, not for the frame
+                // rate to recover: song select runs a little slow for a while
+                // after it arrives, and holding for a fast frame left the
+                // menu fading out over nothing.
+                if (frames < settle_frames)
+                    return;
+
+                arriving.OnUpdate -= beginWhenSettled;
+
+                // In from the ripple's edge — the right for PLAY, the left
+                // for CREATE — while the menu finishes fading beneath it.
+                arriving.MoveToX(0, arrive_duration, Easing.OutQuint);
+                arriving.FadeIn(arrive_duration * 0.8, Easing.OutQuad);
+
+                // Replaces the fallback fade queued in OnSuspending, so the
+                // menu goes as the new screen comes rather than on a timer.
+                this.ClearTransforms(false, nameof(Alpha));
+                this.FadeOut(arrive_duration * 0.7, Easing.OutQuad);
+
+                ripple?.End();
+            }
+
+            screen.OnUpdate += beginWhenSettled;
+        }
+
+        /// <summary>-1 to move left, away from a ripple starting on the right; +1 the other way.</summary>
+        private static float awayFrom(RippleEdge edge) => edge == RippleEdge.Right ? -1 : 1;
 
         protected override bool OnKeyDown(KeyDownEvent e)
         {
@@ -509,7 +699,26 @@ namespace OsuClient.Game.Screens.MainMenu
             // at once reads as a flash rather than as the screen opening.
             logoEntry.ScaleTo(0.88f).Delay(120).ScaleTo(1f, 760, Easing.OutQuint);
 
+            menuTrack.AutoAdvance = true;
             menuTrack.Start();
+        }
+
+        /// <summary>
+        /// A new song: the credit, and the background when there is no
+        /// wallpaper, follow it. The beat pulse and the spectrum read the
+        /// track live, so they follow on their own.
+        /// </summary>
+        private void onSongChanged()
+        {
+            if (menuTrack.Entry?.Path == shownSongPath)
+                return;
+
+            shownSongPath = menuTrack.Entry?.Path;
+
+            nowPlaying.ChangeSong(menuTrack.Title, menuTrack.Artist);
+
+            if (wallpaper == null)
+                background.SetBackground(menuTrack.BackgroundPath);
         }
 
         public override void OnResuming(ScreenTransitionEvent e)
@@ -517,25 +726,55 @@ namespace OsuClient.Game.Screens.MainMenu
             base.OnResuming(e);
 
             this.FadeIn(250, Easing.OutQuint);
+            leavingThroughRipple = false;
+
 
             // Coming back should look like arriving at the menu, not like
             // resuming a menu left half-open behind another screen.
             setExpanded(false);
 
-            // Back from song select or the generator: pick the same song back
-            // up rather than rerolling, which would make every trip through
-            // the menu sound like a different app.
+            // Back from song select, whatever it was playing carries on, and
+            // the credit catches up with it. Back from the tape deck, the
+            // song it paused picks up where it stopped. Either way, the menu
+            // plays through the library again from here.
+            menuTrack.AutoAdvance = true;
             menuTrack.Start();
+            onSongChanged();
+
+            // Maps generated since the game started join the shuffle.
+            menuTrack.RefreshLibrary();
         }
 
         public override void OnSuspending(ScreenTransitionEvent e)
         {
             base.OnSuspending(e);
 
-            // Song select starts its own preview and PlayerScreen starts real
-            // playback; without this the menu's song keeps running underneath
-            // both of them.
-            menuTrack.Stop();
+            // The stack keeps a suspended screen drawn only until the
+            // transforms queued right now have finished, so the fade-out has
+            // to be queued here. Holding first leaves room for the arriving
+            // screen to start it sooner, in step with its slide; this chain
+            // is the fallback, and the menu's lifetime on screen.
+            if (leavingThroughRipple)
+            {
+                this.FadeTo(leaving_hold_alpha, suspended_hold)
+                    .Then().FadeOut(arrive_duration * 0.7, Easing.OutQuad);
+            }
+
+            // Song select carries on with the same song, so it keeps playing
+            // through the change. The tape deck plays its own remixed copy,
+            // so there the original stops.
+            if (e.Next is not RetroSongSelectScreen || sharedMusic == null)
+                menuTrack.Stop();
+        }
+
+        protected override void Dispose(bool isDisposing)
+        {
+            // The shared music outlives this screen; a handler left on it
+            // would call into a disposed menu.
+            if (menuTrack != null)
+                menuTrack.SongChanged -= onSongChanged;
+
+            base.Dispose(isDisposing);
         }
 
         public override bool OnExiting(ScreenExitEvent e)

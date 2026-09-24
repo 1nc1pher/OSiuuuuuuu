@@ -99,6 +99,12 @@ class _SnappedOnset:
     strength: float
     band: str
     snap: str
+    # Where the onset actually was before quantisation, and how many
+    # other onsets lost this slot to it. Neither affects mapping -- they
+    # exist so the analysis export can show the snap as a movement
+    # rather than as a fait accompli (GENERATION_REDESIGN_PLAN.md step 3).
+    raw_time: float = 0.0
+    merged: int = 0
 
 
 # ------------------------------------------------------------------
@@ -124,9 +130,21 @@ def snap_onsets(onsets, grid: BeatGrid, division: int = SNAP_DIVISION):
         label = "1/1" if k % division == 0 else (
             "1/2" if (k * 2) % division == 0 else f"1/{division}")
         prev = slots.get(k)
-        if prev is None or o.strength > prev.strength:
+        if prev is None:
             slots[k] = _SnappedOnset(time=t, strength=float(o.strength),
-                                      band=o.dominant_band(), snap=label)
+                                      band=o.dominant_band(), snap=label,
+                                      raw_time=float(o.time))
+        elif o.strength > prev.strength:
+            # The stronger onset takes the slot, and inherits the tally
+            # of everything that has already lost it.
+            slots[k] = _SnappedOnset(time=t, strength=float(o.strength),
+                                      band=o.dominant_band(), snap=label,
+                                      raw_time=float(o.time),
+                                      merged=prev.merged + 1)
+        else:
+            # Weaker onsets are dropped exactly as before; only the count
+            # of how many is new.
+            prev.merged += 1
     return [slots[k] for k in sorted(slots)]
 
 
@@ -189,7 +207,8 @@ def classify(onsets, grid: BeatGrid, track: AudioTrack,
               slider_max_beats: float = SLIDER_MAX_BEATS,
               stream_max_spacing: float = STREAM_MAX_SPACING_BEATS,
               stream_min_len: int = STREAM_MIN_LEN,
-              sustain_threshold: float = SUSTAIN_THRESHOLD) -> list:
+              sustain_threshold: float = SUSTAIN_THRESHOLD,
+              trace: list = None) -> list:
     """
     Assign a type to every snapped onset. Returns a list of HitObject
     with kind/time/end_time/strength/snap filled in but NO positions yet
@@ -198,6 +217,17 @@ def classify(onsets, grid: BeatGrid, track: AudioTrack,
     `snap_division` sets the rhythmic grid resolution (1 = 1/1, 2 = 1/2,
     4 = 1/4); `min_spacing_beats` optionally thins the result further.
     Both are driven per difficulty by Step 5.
+
+    `trace`, if a list is passed, collects one record per decision --
+    the gap it measured, the sustain ratio it found, whether the gap was
+    clean, how long a run it saw, and which branch won. Nothing else
+    changes: the records are appended, never read, and the objects
+    returned are identical either way (there is a test for that).
+
+    It exists because this function is where "why is this a slider"
+    lives, and the answer is computed and discarded on every run. The
+    analysis export (src/export/dsp_trace.py) is the one caller that
+    wants it.
     """
     snapped_full = snap_onsets(onsets, grid, division=snap_division)
     snapped = enforce_min_spacing(snapped_full, grid, min_spacing_beats)
@@ -230,6 +260,7 @@ def classify(onsets, grid: BeatGrid, track: AudioTrack,
                             strength=s.strength, source_band=s.band, snap=s.snap)
             generate_spinner(obj)
             objs.append(obj)
+            _trace(trace, s, gap_beats, sustain, gap_is_clean, 1, "spinner")
             i += 1
             continue
 
@@ -252,6 +283,8 @@ def classify(onsets, grid: BeatGrid, track: AudioTrack,
                                 strength=s.strength, source_band=s.band,
                                 snap=s.snap)
                 objs.append(obj)     # geometry filled later
+                _trace(trace, s, gap_beats, sustain, gap_is_clean, run,
+                        "streamSlider")
                 i = j + 1
                 continue
 
@@ -262,15 +295,38 @@ def classify(onsets, grid: BeatGrid, track: AudioTrack,
             obj = HitObject(kind="slider", time=s.time, end_time=end,
                             strength=s.strength, source_band=s.band, snap=s.snap)
             objs.append(obj)
+            _trace(trace, s, gap_beats, sustain, gap_is_clean, run,
+                    "heldSlider")
             i += 1
             continue
 
         # 4. circle: the default
         objs.append(HitObject(kind="circle", time=s.time, strength=s.strength,
                                source_band=s.band, snap=s.snap))
+        _trace(trace, s, gap_beats, sustain, gap_is_clean, run, "circle")
         i += 1
 
     return objs
+
+
+def _trace(trace, snapped, gap_beats, sustain, gap_is_clean, run, became):
+    """
+    Append one classification decision, or do nothing when no trace was
+    asked for -- which is every call the pipeline itself makes.
+    """
+    if trace is None:
+        return
+
+    trace.append({
+        "time": float(snapped.time),
+        "gapBeats": float(gap_beats),
+        "sustain": float(sustain),
+        "clean": bool(gap_is_clean),
+        "run": int(run),
+        "became": became,
+        "band": snapped.band,
+        "snap": snapped.snap,
+    })
 
 
 # ------------------------------------------------------------------

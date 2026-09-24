@@ -56,6 +56,27 @@ namespace OsuClient.Game.Graphics
             return new FontCollection().Add(stream);
         }
 
+        /// <summary>
+        /// Runs the rasterizer once per font, off to the side, so the first
+        /// real label does not pay for font parsing, glyph caching and JIT.
+        /// Safe from any thread: it touches no drawable and no renderer.
+        /// </summary>
+        public static void Warm()
+        {
+            const string sample = "RIMO Warm-up 0123456789 abcdefghijklmnopqrstuvwxyz";
+
+            foreach (var family in families.Values)
+            {
+                var font = family.CreateFont(20 * supersample, FontStyle.Regular);
+                var options = new TextOptions(font);
+
+                var size = TextMeasurer.MeasureSize(sample, options);
+
+                using var image = new Image<Rgba32>(Math.Max(1, (int)size.Width), Math.Max(1, (int)size.Height) + 4);
+                image.Mutate(ctx => ctx.DrawText(sample, font, Color.White, new PointF(0, 0)));
+            }
+        }
+
         [Resolved]
         private IRenderer renderer { get; set; } = null!;
 
@@ -111,10 +132,23 @@ namespace OsuClient.Game.Graphics
                 render();
         }
 
+        /// <summary>
+        /// Rasterizes as part of loading, rather than waiting for
+        /// <see cref="LoadComplete"/>. A screen loaded in the background —
+        /// song select, while the menu's ripple plays — then does its text
+        /// there too; left to LoadComplete, the thirty-odd labels of its first
+        /// song all rasterized on the update thread in the frame it appeared,
+        /// which stuttered the transition. Text created on the update thread
+        /// costs what it did before.
+        /// </summary>
+        [BackgroundDependencyLoader]
+        private void load() => render();
+
         protected override void LoadComplete()
         {
             base.LoadComplete();
 
+            // Only does anything if the text changed between load and now.
             render();
         }
 

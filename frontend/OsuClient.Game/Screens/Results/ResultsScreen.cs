@@ -1,3 +1,4 @@
+using osu.Framework.Extensions.Color4Extensions;
 using System;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics;
@@ -39,6 +40,12 @@ namespace OsuClient.Game.Screens.Results
             public required bool Failed { get; init; }
             public string? BackgroundPath { get; init; }
 
+            /// <summary>Whether this run set a new best on its map. Filled in by gameplay once it has asked the store.</summary>
+            public bool NewHighScore { get; set; }
+
+            /// <summary>The best score the map had before this run, or null for a first play.</summary>
+            public long? PreviousBest { get; set; }
+
             public static Result From(Beatmap beatmap, ScoreProcessor score, bool failed, string? backgroundPath = null) => new Result
             {
                 Title = $"{beatmap.Metadata.Artist} - {beatmap.Metadata.Title}",
@@ -57,6 +64,9 @@ namespace OsuClient.Game.Screens.Results
         }
 
         private readonly Result result;
+
+        /// <summary>The run on display. Exposed for tests.</summary>
+        public Result ShownResult => result;
 
         public ResultsScreen(Result result)
         {
@@ -136,6 +146,7 @@ namespace OsuClient.Game.Screens.Results
                             TextSize = 17,
                             Colour = new Color4(0.85f, 0.85f, 0.92f, 1f),
                         },
+                        createHighScoreLine(),
                         createJudgementBreakdown(),
                         new RetroText
                         {
@@ -150,6 +161,72 @@ namespace OsuClient.Game.Screens.Results
                     },
                 },
             };
+        }
+
+        /// <summary>
+        /// Where this run stands against the map's best: a badge for a new
+        /// one, with what it beat, or the standing best to aim at. Nothing on
+        /// a first play that failed, where there is neither.
+        /// </summary>
+        private Drawable createHighScoreLine()
+        {
+            if (result.NewHighScore)
+            {
+                var badge = new FillFlowContainer
+                {
+                    Anchor = Anchor.TopCentre,
+                    Origin = Anchor.TopCentre,
+                    AutoSizeAxes = Axes.Both,
+                    Direction = FillDirection.Vertical,
+                    Spacing = new Vector2(0, 4),
+                    Margin = new MarginPadding { Top = 6 },
+                    Children = new Drawable[]
+                    {
+                        new RetroText
+                        {
+                            Anchor = Anchor.TopCentre,
+                            Origin = Anchor.TopCentre,
+                            Text = "NEW HIGH SCORE",
+                            Font = RetroFontFamily.Display,
+                            TextSize = 18,
+                            Colour = RetroPalette.Amber,
+                        },
+                        new RetroText
+                        {
+                            Anchor = Anchor.TopCentre,
+                            Origin = Anchor.TopCentre,
+                            Text = result.PreviousBest is long previous
+                                ? $"previous best {previous:N0}"
+                                : "first clear of this map",
+                            Font = RetroFontFamily.Body,
+                            TextSize = 12,
+                            Colour = RetroPalette.Amber.Opacity(0.7f),
+                        },
+                    },
+                };
+
+                // A slow pulse, so it is noticed without shouting.
+                badge.OnLoadComplete += _ =>
+                    badge.ScaleTo(1.06f, 600, Easing.InOutSine).Then().ScaleTo(1f, 600, Easing.InOutSine).Loop();
+
+                return badge;
+            }
+
+            if (result.PreviousBest is long best)
+            {
+                return new RetroText
+                {
+                    Anchor = Anchor.TopCentre,
+                    Origin = Anchor.TopCentre,
+                    Text = $"HIGH SCORE  {best:N0}",
+                    Font = RetroFontFamily.Body,
+                    TextSize = 13,
+                    Colour = new Color4(0.7f, 0.7f, 0.8f, 1f),
+                    Margin = new MarginPadding { Top = 6 },
+                };
+            }
+
+            return Empty();
         }
 
         private Drawable createGrade() => new RetroText

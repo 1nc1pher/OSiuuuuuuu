@@ -19,20 +19,33 @@ own folder:
                         this copy is a game asset.
     analysis.json    -- onsets, beat grid, and per-tier hit objects with
                         the provenance fields the .osu file drops.
+    dsp.json         -- the per-frame signals underneath those
+                        decisions, written by src/export/dsp_trace.py:
+                        the flux the peak-picker ran over, the median
+                        its threshold came from, the envelope the tempo
+                        search autocorrelated, and the rest. A separate
+                        file with its own version, so a client that
+                        can't read it still reads the two above.
 
-The frontend (FRONTEND_PLAN.md Phase 7) animates a step-by-step reveal
-from these two files. That is the whole coupling: files in a folder,
-same as the .osz. Nothing here streams, blocks or talks to the frontend,
-and a frontend that never runs changes nothing about this.
+The frontend animates a step-by-step reveal from these files
+(FRONTEND_PLAN.md Phase 7, extended by GENERATION_REDESIGN_PLAN.md).
+That is the whole coupling: files in a folder, same as the .osz. Nothing
+here streams, blocks or talks to the frontend, and a frontend that never
+runs changes nothing about this.
 
-Both files are additive -- build_beatmap_set() has already zipped the
-.osz by the time these are written, so neither ends up inside it.
+All three are additive -- build_beatmap_set() has already zipped the
+.osz by the time they are written, so none of them ends up inside it.
+They are also independent of each other: a client that can read only
+some of them shows correspondingly less, which is the whole degradation
+story for maps generated before a given file existed.
 """
 
 import json
 import os
 
 import numpy as np
+
+from export.dsp_trace import export_dsp
 
 import matplotlib
 matplotlib.use("Agg")           # no display needed; this only ever writes files
@@ -210,11 +223,20 @@ def write_analysis(path: str, analysis: dict) -> str:
 
 
 def export_analysis(folder: str, track, mel_db: np.ndarray, onsets, grid,
-                     tiers: dict, onset_source: str = "") -> dict:
+                     tiers: dict, onset_source: str = "",
+                     presets: dict = None, tier_onsets: dict = None) -> dict:
     """
-    Write both artifacts into an existing beatmap folder.
+    Write every analysis artifact into an existing beatmap folder.
 
-    Returns {"analysis": path, "spectrogram": path}.
+    Returns {"analysis": path, "spectrogram": path, "dsp": path}.
+
+    `presets` ({tier name: DifficultyPreset}) and `tier_onsets`
+    ({tier name: list[Onset]}) only reach dsp.json. Between them they
+    give it each tier's detector sensitivity -- so the client can
+    rebuild any tier's threshold from the one exported median curve --
+    and each tier's funnel from detected onsets down to placed objects.
+    Passing neither still writes a valid file, just without those
+    blocks.
     """
     spectrogram_path = write_spectrogram_png(
         os.path.join(folder, SPECTROGRAM_FILENAME), mel_db)
@@ -223,4 +245,11 @@ def export_analysis(folder: str, track, mel_db: np.ndarray, onsets, grid,
         os.path.join(folder, ANALYSIS_FILENAME),
         build_analysis(track, onsets, grid, tiers, onset_source=onset_source))
 
-    return {"analysis": analysis_path, "spectrogram": spectrogram_path}
+    # Handed the same mel spectrogram, so this costs one librosa RMS call
+    # and some arithmetic -- no second decode and no second mel pass.
+    dsp_path = export_dsp(folder, track, mel_db, presets=presets, grid=grid,
+                           tier_onsets=tier_onsets, tier_objects=tiers,
+                           onset_source=onset_source)
+
+    return {"analysis": analysis_path, "spectrogram": spectrogram_path,
+            "dsp": dsp_path}

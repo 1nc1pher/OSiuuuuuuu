@@ -82,6 +82,27 @@ namespace OsuClient.Game.Screens.MainMenu
             this.Delay(600).FadeIn(700, Easing.OutQuint);
         }
 
+        /// <summary>
+        /// Swaps the credit for a song that has just started: the old one
+        /// fades out, the new one fades in — no held-back entrance, which is
+        /// for the menu opening, not for a song following another.
+        /// </summary>
+        public void ChangeSong(string? songTitle, string? songArtist)
+        {
+            ClearTransforms();
+
+            this.FadeOut(250, Easing.OutQuint).OnComplete(_ =>
+            {
+                if (songTitle == null && songArtist == null)
+                    return;
+
+                title.Text = songTitle ?? "Unknown title";
+                artist.Text = songArtist ?? "Unknown artist";
+
+                this.FadeIn(450, Easing.OutQuint);
+            });
+        }
+
         /// <summary>The "NOW PLAYING" label, exposed for the accent colour.</summary>
         public RetroText Label => label;
     }

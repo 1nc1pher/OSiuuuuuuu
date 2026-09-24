@@ -223,11 +223,17 @@ namespace OsuClient.Game.Beatmaps
                     set.AudioPath = audio;
             }
 
-            // Ordinal sort for the same reason difficulty order is sorted
-            // this way: deterministic across platforms, so which file wins
-            // when a set somehow has more than one image doesn't depend on
+            // The cover the map itself names comes first: that is the image
+            // chosen for it. Only a set that names none falls back to any
+            // image in its folder — which, for a map generated without cover
+            // art, is the analysis export's spectrogram. Ordinal sort for the
+            // same reason difficulty order is sorted this way: deterministic
+            // across platforms, so which file wins doesn't depend on
             // filesystem enumeration order.
-            string? background = files.Where(isImageFile).OrderBy(f => f, StringComparer.Ordinal).FirstOrDefault();
+            string? background = decoded
+                                 .Select(d => d.beatmap.General.BackgroundFilename)
+                                 .FirstOrDefault(f => f != null && File.Exists(Path.Combine(root, f)))
+                                 ?? files.Where(isImageFile).OrderBy(f => f, StringComparer.Ordinal).FirstOrDefault();
 
             if (background != null)
                 set.BackgroundPath = Path.Combine(root, background);

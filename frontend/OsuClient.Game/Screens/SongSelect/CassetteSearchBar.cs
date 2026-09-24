@@ -30,13 +30,16 @@ namespace OsuClient.Game.Screens.SongSelect
         /// <summary>Corner rounding of the sticker, shared with its focus glow.</summary>
         private const float corner_radius = 3;
 
-        private static readonly Color4 paper = new Color4(0.93f, 0.90f, 0.82f, 0.97f);
-        private static readonly Color4 ink = new Color4(0.13f, 0.10f, 0.16f, 1f);
+        private static readonly Color4 paper = PaperTextBox.Paper;
+        private static readonly Color4 ink = PaperTextBox.Ink;
 
         /// <summary>Fired as the query changes, already trimmed.</summary>
         public Action<string>? QueryChanged;
 
-        private readonly SearchTextBox textBox;
+        /// <summary>Raised when the box gains focus — clicked into, or focused by a key.</summary>
+        public Action? Focused;
+
+        private readonly PaperTextBox textBox;
         private readonly Container focusGlow;
 
         public CassetteSearchBar()
@@ -115,10 +118,11 @@ namespace OsuClient.Game.Screens.SongSelect
                                     Text = "SIDE A / SEARCH",
                                     Colour = ink.Opacity(0.55f),
                                 },
-                                textBox = new SearchTextBox
+                                textBox = new PaperTextBox
                                 {
                                     RelativeSizeAxes = Axes.X,
                                     Height = 30,
+                                    PlaceholderText = "search songs...",
                                 },
                             },
                         },
@@ -161,6 +165,9 @@ namespace OsuClient.Game.Screens.SongSelect
         /// </summary>
         private void setFocused(bool focused)
         {
+            if (focused)
+                Focused?.Invoke();
+
             focusGlow.ClearTransforms();
 
             if (!focused)
@@ -206,115 +213,5 @@ namespace OsuClient.Game.Screens.SongSelect
         /// character and needs each one's width at construction, which a
         /// texture rasterized asynchronously can't promise.
         /// </summary>
-        private partial class SearchTextBox : BasicTextBox
-        {
-            /// <summary>Fired when the box gains or loses focus.</summary>
-            public Action<bool>? FocusChanged;
-
-            public SearchTextBox()
-            {
-                BackgroundUnfocused = Color4.Transparent;
-                BackgroundFocused = Color4.Transparent;
-                BackgroundCommit = Color4.Transparent;
-                PlaceholderText = "search songs...";
-            }
-
-            protected override void OnFocus(FocusEvent e)
-            {
-                base.OnFocus(e);
-                FocusChanged?.Invoke(true);
-            }
-
-            protected override void OnFocusLost(FocusLostEvent e)
-            {
-                base.OnFocusLost(e);
-                FocusChanged?.Invoke(false);
-            }
-
-            protected override float LeftRightPadding => 0;
-
-            protected override Color4 SelectionColour => RetroPalette.Magenta.Opacity(0.35f);
-
-            protected override SpriteText CreatePlaceholder() => new SpriteText
-            {
-                Anchor = Anchor.CentreLeft,
-                Origin = Anchor.CentreLeft,
-                Font = FontUsage.Default.With(size: 21, italics: true),
-                Colour = ink.Opacity(0.38f),
-            };
-
-            protected override Drawable GetDrawableCharacter(char c) => new SpriteText
-            {
-                Text = c.ToString(),
-                Font = FontUsage.Default.With(size: 21),
-                Colour = ink,
-            };
-
-            protected override Caret CreateCaret() => new SearchCaret(SelectionColour);
-        }
-
-        /// <summary>
-        /// The typing caret.
-        ///
-        /// Written out rather than configured from <see cref="BasicCaret"/>,
-        /// which cannot be made visible here: it repaints itself
-        /// <see cref="Color4.White"/> every time it moves, so a colour set on
-        /// it survives exactly until the next keystroke — and white on this
-        /// sticker's cream paper is invisible either way. It's also wider
-        /// than the framework's and carries a glow, because the thing it has
-        /// to stand out against is paper rather than the dark panel a caret
-        /// normally sits on.
-        /// </summary>
-        private partial class SearchCaret : Caret
-        {
-            private const float caret_width = 3;
-
-            private readonly Color4 selectionColour;
-
-            public SearchCaret(Color4 selectionColour)
-            {
-                this.selectionColour = selectionColour;
-
-                RelativeSizeAxes = Axes.Y;
-                Size = new Vector2(caret_width, 0.8f);
-                Anchor = Anchor.CentreLeft;
-                Origin = Anchor.CentreLeft;
-                Masking = true;
-                CornerRadius = caret_width / 2;
-                Colour = RetroPalette.Magenta;
-                EdgeEffect = new EdgeEffectParameters
-                {
-                    Type = EdgeEffectType.Glow,
-                    Colour = RetroPalette.Magenta.Opacity(0.5f),
-                    Radius = 7,
-                };
-
-                InternalChild = new Box { RelativeSizeAxes = Axes.Both };
-            }
-
-            public override void Hide() => this.FadeOut(120);
-
-            public override void DisplayAt(Vector2 position, float? selectionWidth)
-            {
-                if (selectionWidth != null)
-                {
-                    this.MoveTo(position, 60, Easing.Out);
-                    this.ResizeWidthTo(selectionWidth.Value + caret_width / 2, 60, Easing.Out);
-                    this.FadeColour(selectionColour, 200, Easing.Out);
-                    this.FadeTo(1, 200, Easing.Out);
-                    return;
-                }
-
-                this.MoveTo(new Vector2(position.X - caret_width / 2, position.Y), 60, Easing.Out);
-                this.ResizeWidthTo(caret_width, 60, Easing.Out);
-                this.FadeColour(RetroPalette.Magenta, 200, Easing.Out);
-
-                // Blinks between full and dim rather than fully out: a caret
-                // that vanishes entirely is harder to find again on a busy
-                // screen than one that only dips.
-                this.FadeTo(1f).Then().FadeTo(0.35f, 480, Easing.InOutSine)
-                    .Then().FadeTo(1f, 480, Easing.InOutSine).Loop();
-            }
-        }
     }
 }

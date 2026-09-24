@@ -156,14 +156,33 @@ def adaptive_threshold(flux: np.ndarray, sr: int, hop_length: int = HOP_LENGTH,
     as false onsets. `delta` puts a hard floor under the threshold so
     silence stays silent regardless of how low the local median gets.
     """
+    return delta + local_median(flux, sr, hop_length=hop_length,
+                                 window_sec=window_sec) * margin
+
+
+def local_median(flux: np.ndarray, sr: int, hop_length: int = HOP_LENGTH,
+                  window_sec: float = ADAPTIVE_MEDIAN_WINDOW_SEC) -> np.ndarray:
+    """
+    The moving median that adaptive_threshold() is built on: the local
+    noise floor of the flux signal, tracked over a window of
+    `window_sec`.
+
+    Split out from adaptive_threshold() because it is the only part of
+    the threshold that does not depend on the difficulty preset --
+    `margin` and `delta` do, this does not. The analysis export
+    (src/export/dsp_trace.py) writes this curve once and lets the
+    frontend derive any tier's threshold from it as
+    `delta + margin * median`, which is both smaller than writing five
+    baked threshold curves and the thing that lets the client re-run
+    peak-picking at settings the backend never used.
+    """
     frames_per_window = max(1, int(window_sec * sr / hop_length))
     # ensure odd window for a centered median filter
     if frames_per_window % 2 == 0:
         frames_per_window += 1
 
     from scipy.ndimage import median_filter
-    local_median = median_filter(flux, size=frames_per_window, mode="reflect")
-    return delta + local_median * margin
+    return median_filter(flux, size=frames_per_window, mode="reflect")
 
 
 def pick_peaks(flux: np.ndarray, threshold: np.ndarray, sr: int,

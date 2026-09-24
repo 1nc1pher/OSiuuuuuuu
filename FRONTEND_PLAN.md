@@ -676,6 +676,27 @@ the plan didn't anticipate:*
   from one map to the next. None of this is guessable from the data
   shape; it came from looking at real generated maps on screen.
 
+**Song select redesign — vinyl & cassette** ✅ done — planned and
+recorded separately in `CAROUSEL_REDESIGN_PLAN.md`, which carries its own
+eleven steps and as-built notes.
+
+**Main menu redesign — the OTO logo, live spectrum, expanding strip** ✅
+done — planned and recorded separately in `MENU_REDESIGN_PLAN.md`. Replaces
+the Phase 0 placeholder menu (`AnimatedLogo` and its three `BasicButton`s,
+both now deleted) with a random library song playing over a random wallpaper,
+a beat-pulsing OTO logo, a live FFT ring built from
+`Track.CurrentAmplitudes`, and a strip that grows from behind the logo into
+CREATE and PLAY.
+
+**Generation redesign — the studio rack, and showing the DSP's working** 📋
+planned — recorded separately in `GENERATION_REDESIGN_PLAN.md`. Two things at
+once: `UploadScreen` and the reveal's progress half are the last unthemed
+screens in the client and become a tape deck and a reel-to-reel machine; and
+the backend starts exporting the DSP internals it currently throws away (a
+second file, `dsp.json`, alongside `analysis.json`) so the reveal grows from
+four stages to nine and gains a scrubbable `DspInspectorScreen` reachable from
+song select for any already-generated map.
+
 **Phase 8 — per-beatmap customization (backgrounds, skinning & effects)** 📋 planned
 
 Lets a user attach a photo and/or a video to a beatmap: the photo acts

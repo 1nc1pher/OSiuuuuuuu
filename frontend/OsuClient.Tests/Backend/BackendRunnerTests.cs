@@ -110,6 +110,35 @@ namespace OsuClient.Tests.Backend
         }
 
         [Test]
+        public void CoverArtIsPassedAsItsOwnArgument()
+        {
+            var arguments = BackendRunner.BuildArguments(paths, new GenerationRequest
+            {
+                AudioPath = "C:\\songs\\my song.mp3",
+                CoverPath = "C:\\pictures\\my cover.png",
+            });
+
+            Assert.That(arguments[arguments.ToList().IndexOf("--cover") + 1], Is.EqualTo("C:\\pictures\\my cover.png"));
+        }
+
+        [Test]
+        public void NoCoverArtMeansNoCoverFlag()
+        {
+            Assert.That(BackendRunner.BuildArguments(paths, request()), Does.Not.Contain("--cover"));
+        }
+
+        [TestCase("art.png", true)]
+        [TestCase("art.JPG", true)]
+        [TestCase("art.jpeg", true)]
+        [TestCase("art.bmp", true)]
+        [TestCase("art.gif", false)]
+        [TestCase("song.mp3", false)]
+        public void RecognisesCoverArtFiles(string name, bool expected)
+        {
+            Assert.That(BackendRunner.IsSupportedCoverFile(name), Is.EqualTo(expected));
+        }
+
+        [Test]
         public void NoDifficultiesMeansTheFlagIsLeftOffEntirely()
         {
             // main.py's own default is every tier — passing an empty

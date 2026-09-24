@@ -267,6 +267,105 @@ def test_build_beatmap_set_makes_folder_and_valid_osz(tmp_path):
     assert sum(n.endswith(".osu") for n in names) == 2
 
 
+def test_osz_root_keeps_the_osz_out_of_the_folder_directory(tmp_path):
+    # The frontend lists a set by its .osz when one shares a directory with
+    # the folder, and a zipped set has no audio on disk to play -- so the
+    # CLI writes the .osz somewhere else.
+    track = generate_click_track(bpm=120.0, duration_sec=10.0, sr=DEFAULT_SR)
+    audio = tmp_path / "s.wav"
+    import soundfile as sf
+    sf.write(audio, track.y, track.sr)
+
+    objs, grid = build_map(track, PRESETS["Normal"])
+    out, osz_root = tmp_path / "out", tmp_path / "osz"
+    result = build_beatmap_set(str(out), str(audio), OsuMetadata(title="Song", artist="Tester"),
+                                [{"name": "Normal", "objects": objs, "grid": grid,
+                                  "difficulty_section":
+                                      PRESETS["Normal"].to_osu_difficulty_section()}],
+                                osz_root=str(osz_root))
+
+    assert os.path.dirname(result["osz"]) == str(osz_root)
+    assert zipfile.is_zipfile(result["osz"])
+    assert not any(name.endswith(".osz") for name in os.listdir(out))
+
+
+def _one_normal(track):
+    objs, grid = build_map(track, PRESETS["Normal"])
+    return [{"name": "Normal", "objects": objs, "grid": grid,
+             "difficulty_section": PRESETS["Normal"].to_osu_difficulty_section()}]
+
+
+def test_cover_art_is_copied_declared_and_packed(tmp_path):
+    track = generate_click_track(bpm=120.0, duration_sec=10.0, sr=DEFAULT_SR)
+    audio = tmp_path / "s.wav"
+    import soundfile as sf
+    sf.write(audio, track.y, track.sr)
+
+    cover = tmp_path / "My Photo.PNG"
+    cover.write_bytes(b"fake png bytes")
+
+    result = build_beatmap_set(str(tmp_path / "out"), str(audio),
+                                OsuMetadata(title="Song", artist="Tester"),
+                                _one_normal(track), cover_path=str(cover))
+
+    # A fixed, lower-cased name, whatever the source was called.
+    assert os.path.isfile(os.path.join(result["folder"], "cover.png"))
+
+    with open(result["osu_files"][0], encoding="utf-8") as f:
+        text = f.read()
+    events = text.split("[Events]")[1].split("[TimingPoints]")[0]
+    assert '0,0,"cover.png",0,0' in events
+
+    with zipfile.ZipFile(result["osz"]) as zf:
+        assert "cover.png" in zf.namelist()
+
+
+def test_a_new_cover_replaces_the_old_one(tmp_path):
+    track = generate_click_track(bpm=120.0, duration_sec=10.0, sr=DEFAULT_SR)
+    audio = tmp_path / "s.wav"
+    import soundfile as sf
+    sf.write(audio, track.y, track.sr)
+
+    first, second = tmp_path / "a.png", tmp_path / "b.jpg"
+    first.write_bytes(b"png")
+    second.write_bytes(b"jpg")
+
+    meta = OsuMetadata(title="Song", artist="Tester")
+    build_beatmap_set(str(tmp_path / "out"), str(audio), meta, _one_normal(track), cover_path=str(first))
+    result = build_beatmap_set(str(tmp_path / "out"), str(audio), meta, _one_normal(track), cover_path=str(second))
+
+    covers = [n for n in os.listdir(result["folder"]) if n.startswith("cover.")]
+    assert covers == ["cover.jpg"]
+
+
+def test_no_cover_means_no_background_event(tmp_path):
+    track = generate_click_track(bpm=120.0, duration_sec=10.0, sr=DEFAULT_SR)
+    audio = tmp_path / "s.wav"
+    import soundfile as sf
+    sf.write(audio, track.y, track.sr)
+
+    result = build_beatmap_set(str(tmp_path / "out"), str(audio),
+                                OsuMetadata(title="Song", artist="Tester"), _one_normal(track))
+
+    with open(result["osu_files"][0], encoding="utf-8") as f:
+        events = f.read().split("[Events]")[1].split("[TimingPoints]")[0]
+    assert '"' not in events
+
+
+def test_a_non_image_cover_is_refused(tmp_path):
+    track = generate_click_track(bpm=120.0, duration_sec=10.0, sr=DEFAULT_SR)
+    audio = tmp_path / "s.wav"
+    import soundfile as sf
+    sf.write(audio, track.y, track.sr)
+
+    notes = tmp_path / "notes.txt"
+    notes.write_text("hi")
+
+    with pytest.raises(ValueError):
+        build_beatmap_set(str(tmp_path / "out"), str(audio), OsuMetadata(title="Song"),
+                          _one_normal(track), cover_path=str(notes))
+
+
 def test_unsafe_metadata_is_sanitized(tmp_path):
     track = generate_click_track(bpm=120.0, duration_sec=10.0, sr=DEFAULT_SR)
     audio = tmp_path / "s.wav"

@@ -126,6 +126,51 @@ namespace OsuClient.Tests.Visual
             AddAssert("wrapped to first", () => carousel.Selection?.DisplayName == "A - one");
         }
 
+        /// <summary>
+        /// The turn sound follows the record: forward and back as the ring
+        /// actually moves (the short way round, across the wrap too), and
+        /// nothing at all when a search re-picks without turning anything.
+        /// </summary>
+        [Test]
+        public void TurningReportsItsDirectionForTheSound()
+        {
+            var turns = new List<bool>();
+
+            var all = new[]
+            {
+                Entry("A - one", "Easy"),
+                Entry("B - two", "Easy"),
+                Entry("C - three", "Easy"),
+                Entry("D - four", "Easy"),
+            };
+
+            CreateCarousel(all);
+            AddStep("listen for turns", () =>
+            {
+                turns.Clear();
+                carousel.Turned += forward => turns.Add(forward);
+            });
+
+            AddStep("forward one", () => carousel.SelectRelative(1));
+            AddAssert("one forward turn", () => turns.SequenceEqual(new[] { true }));
+
+            AddStep("back one", () => carousel.SelectRelative(-1));
+            AddAssert("then a back turn", () => turns.SequenceEqual(new[] { true, false }));
+
+            AddStep("back across the wrap", () => carousel.SelectRelative(-1));
+            AddAssert("still reads as back", () => turns.Last() == false);
+
+            AddStep("forward across the wrap", () => carousel.SelectRelative(1));
+            AddAssert("reads as forward", () => turns.Last());
+
+            AddStep("filter", () =>
+            {
+                turns.Clear();
+                carousel.SetEntries(new[] { all[2], all[3] });
+            });
+            AddAssert("a search re-pick makes no sound", () => turns.Count == 0);
+        }
+
         [Test]
         public void SelectionSurvivesTheListBeingFiltered()
         {

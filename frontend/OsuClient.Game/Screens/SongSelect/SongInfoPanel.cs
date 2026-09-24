@@ -4,7 +4,9 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using OsuClient.Game.Beatmaps;
+using osu.Framework.Graphics.Colour;
 using OsuClient.Game.Graphics;
+using OsuClient.Game.Scores;
 using osuTK;
 using osuTK.Graphics;
 
@@ -28,6 +30,8 @@ namespace OsuClient.Game.Screens.SongSelect
         private readonly RetroText bpmValue;
         private readonly RetroText lengthValue;
         private readonly RetroText objectsValue;
+        private readonly RetroText highScoreValue;
+        private readonly RetroText highScoreDetail;
 
         private readonly RetroText difficultyName;
         private readonly StatColumn circles;
@@ -36,6 +40,7 @@ namespace OsuClient.Game.Screens.SongSelect
         private readonly StatColumn circleSize;
         private readonly StatColumn approachRate;
         private readonly StatColumn overallDifficulty;
+
 
         public SongInfoPanel()
         {
@@ -50,13 +55,19 @@ namespace OsuClient.Game.Screens.SongSelect
                     AutoSizeAxes = Axes.Y,
                     Masking = true,
                     CornerRadius = 14,
-                    BorderThickness = 1.5f,
-                    BorderColour = RetroPalette.Cyan.Opacity(0.5f),
+                    // The same glow as the analyse plate under it, held at the
+                    // plate's brightest rather than breathing: the plate is the
+                    // thing that pulses for attention, the panel just belongs
+                    // to the same lit kit. Hollow, so the glow rings the panel
+                    // without tinting its translucent face.
+                    BorderThickness = 2,
+                    BorderColour = RetroPalette.Cyan.Opacity(0.6f),
                     EdgeEffect = new osu.Framework.Graphics.Effects.EdgeEffectParameters
                     {
-                        Type = osu.Framework.Graphics.Effects.EdgeEffectType.Shadow,
-                        Colour = RetroPalette.Cyan.Opacity(0.22f),
-                        Radius = 18,
+                        Type = osu.Framework.Graphics.Effects.EdgeEffectType.Glow,
+                        Colour = RetroPalette.Cyan.Opacity(0.5f),
+                        Radius = 20,
+                        Hollow = true,
                     },
                     Children = new Drawable[]
                     {
@@ -90,7 +101,8 @@ namespace OsuClient.Game.Screens.SongSelect
                                     TextSize = 15,
                                     Colour = RetroPalette.TextDim,
                                 },
-                                rhythmInfoBox(out bpmValue, out lengthValue, out objectsValue),
+                                rhythmInfoBox(out bpmValue, out lengthValue, out objectsValue,
+                                    out highScoreValue, out highScoreDetail),
                                 difficultyName = new RetroText
                                 {
                                     Font = RetroFontFamily.Body,
@@ -139,11 +151,14 @@ namespace OsuClient.Game.Screens.SongSelect
         /// the generated rhythm itself, set apart from the map's osu! stats
         /// because they're the ones this project's backend actually decides.
         /// </summary>
-        private static Drawable rhythmInfoBox(out RetroText bpm, out RetroText length, out RetroText objects)
+        private static Drawable rhythmInfoBox(out RetroText bpm, out RetroText length, out RetroText objects,
+                                              out RetroText highScore, out RetroText highScoreLine)
         {
             RetroText bpmText;
             RetroText lengthText;
             RetroText objectsText;
+            RetroText highScoreText;
+            RetroText highScoreLineText;
 
             var box = new Container
             {
@@ -174,12 +189,55 @@ namespace OsuClient.Game.Screens.SongSelect
                             readout("OBJECTS", out objectsText),
                         },
                     },
+                    // The best run on this difficulty, at the strip's far end:
+                    // the one number here that is the player's own.
+                    new FillFlowContainer
+                    {
+                        Anchor = Anchor.CentreRight,
+                        Origin = Anchor.CentreRight,
+                        AutoSizeAxes = Axes.Both,
+                        Direction = FillDirection.Vertical,
+                        Spacing = new Vector2(0, 5),
+                        Margin = new MarginPadding { Right = 16 },
+                        Children = new Drawable[]
+                        {
+                            new RetroText
+                            {
+                                Anchor = Anchor.TopRight,
+                                Origin = Anchor.TopRight,
+                                Font = RetroFontFamily.Body,
+                                TextSize = 10,
+                                Text = "HIGH SCORE",
+                                Colour = RetroPalette.Amber.Opacity(0.8f),
+                            },
+                            highScoreText = new RetroText
+                            {
+                                Anchor = Anchor.TopRight,
+                                Origin = Anchor.TopRight,
+                                Font = RetroFontFamily.Display,
+                                TextSize = 15,
+                                Colour = RetroPalette.Amber,
+                                Text = "--",
+                            },
+                            highScoreLineText = new RetroText
+                            {
+                                Anchor = Anchor.TopRight,
+                                Origin = Anchor.TopRight,
+                                Font = RetroFontFamily.Body,
+                                TextSize = 10,
+                                Colour = RetroPalette.TextDim,
+                                Text = "NOT CLEARED YET",
+                            },
+                        },
+                    },
                 },
             };
 
             bpm = bpmText;
             length = lengthText;
             objects = objectsText;
+            highScore = highScoreText;
+            highScoreLine = highScoreLineText;
 
             return box;
         }
@@ -222,6 +280,29 @@ namespace OsuClient.Game.Screens.SongSelect
         /// <paramref name="accent"/> is the colour that difficulty's cassette
         /// carries, so the two agree; null falls back to the density ramp.
         /// </summary>
+        /// <summary>
+        /// Shows the best run on the difficulty on display, or that it has not
+        /// been cleared yet. The grade line takes the grade's own colour, as
+        /// on the results screen.
+        /// </summary>
+        public void SetHighScore(HighScore? best)
+        {
+            if (best == null)
+            {
+                highScoreValue.Text = "--";
+                highScoreDetail.Text = "NOT CLEARED YET";
+                highScoreDetail.Colour = RetroPalette.TextDim;
+                return;
+            }
+
+            highScoreValue.Text = best.Score.ToString("N0");
+            highScoreDetail.Text = $"{best.Grade} · {best.Accuracy:0.00}% · {best.MaxCombo}x";
+            highScoreDetail.Colour = Results.ResultsScreen.ColourForGrade(best.Grade);
+        }
+
+        /// <summary>What the high score readout says. Exposed for tests.</summary>
+        public string HighScoreText => highScoreValue.Text;
+
         public void SetBeatmap(Beatmap? beatmap, Color4? accent = null)
         {
             if (beatmap == null)

@@ -70,10 +70,15 @@ namespace OsuClient.Game.Beatmaps
     /// Finds beatmaps on disk.
     ///
     /// Per FRONTEND_PLAN.md §4, the frontend and backend stay decoupled at the
-    /// file level: the backend writes <c>data/output/&lt;Artist&gt; - &lt;Song&gt;.osz</c>
+    /// file level: the backend writes <c>data/output/&lt;Artist&gt; - &lt;Song&gt;/</c>
     /// and the frontend just reads a directory. By default that directory IS
     /// the backend's <c>data/output/</c>, so freshly generated maps appear in
     /// song select with no copy step.
+    ///
+    /// The backend's <c>.osz</c> goes to <c>data/OSU_beatmaps/</c> instead.
+    /// An <c>.osz</c> sharing this directory with its folder would win the
+    /// duplicate check in <see cref="Load"/>, and a set read out of a zip has
+    /// no audio on disk — song select would list it but couldn't play it.
     /// </summary>
     public static class BeatmapLibrary
     {

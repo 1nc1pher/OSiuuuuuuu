@@ -5,6 +5,7 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using OsuClient.Game.Backend;
+using OsuClient.Game.Graphics;
 using osuTK;
 using osuTK.Graphics;
 
@@ -42,10 +43,6 @@ namespace OsuClient.Game.Screens.Generation
         /// the loud hits — the ones that became objects.
         /// </summary>
         public const int MaxSparks = 160;
-
-        private static readonly Color4 low_colour = new Color4(1f, 0.42f, 0.32f, 1f);
-        private static readonly Color4 mid_colour = new Color4(0.45f, 0.95f, 0.75f, 1f);
-        private static readonly Color4 high_colour = new Color4(0.6f, 0.75f, 1f, 1f);
 
         private readonly IReadOnlyList<AnalysisOnset> onsets;
         private readonly SpectrogramReveal spectrogram;
@@ -87,12 +84,7 @@ namespace OsuClient.Game.Screens.Generation
         }
 
         /// <summary>The colour a band's onsets spark in — bass warm, treble cool.</summary>
-        public static Color4 ColourForBand(string band) => band switch
-        {
-            "low" => low_colour,
-            "high" => high_colour,
-            _ => mid_colour,
-        };
+        public static Color4 ColourForBand(string band) => RetroPalette.ForBand(band);
 
         /// <summary>
         /// Sparks the onsets in over <paramref name="duration"/> milliseconds,
@@ -139,8 +131,14 @@ namespace OsuClient.Game.Screens.Generation
                 spark.UpdatePosition(spectrogram.TimeToX(spark.Time), DrawHeight);
         }
 
+        /// <summary>Raised as each onset is revealed by the sweep — not for a skip, which places them all at once.</summary>
+        public Action<AnalysisOnset>? SparkPlaced;
+
         private void addSpark(AnalysisOnset onset, bool animate)
         {
+            if (animate)
+                SparkPlaced?.Invoke(onset);
+
             // Strength is normalised spectral flux, so it is already 0..1;
             // the floor keeps a weak onset visible rather than a hairline.
             float strength = (float)Math.Clamp(onset.Strength, 0.12, 1);

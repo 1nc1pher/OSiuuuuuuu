@@ -267,12 +267,26 @@ namespace OsuClient.Game.Screens.MainMenu
         {
             base.LoadComplete();
 
+            if (!Drifting)
+                return;
+
             // Both copies drift identically, started in the same frame. Any
             // difference between them would show as the colour copy sliding
             // against the grey one along the reveal's edge.
             drift(greyDrift);
             drift(colourDrift);
         }
+
+        /// <summary>
+        /// Whether the art drifts slowly across the screen.
+        ///
+        /// On for the menu, where a still picture behind a moving logo looks
+        /// like a frozen frame. Off for the upload screen, which is a
+        /// workbench: nothing there moves on its own, and a drifting photo
+        /// behind a form reads as a bug rather than as atmosphere. Must be set
+        /// before the drawable loads.
+        /// </summary>
+        public bool Drifting { get; init; } = true;
 
         private static void drift(Drawable target)
         {

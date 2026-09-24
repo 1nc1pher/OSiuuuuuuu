@@ -1,9 +1,12 @@
+using System.Linq;
 using NUnit.Framework;
 using osu.Framework.Graphics;
 using osu.Framework.Input.Events;
 using osu.Framework.Input.States;
 using osu.Framework.Screens;
+using osu.Framework.Testing;
 using OsuClient.Game.Beatmaps;
+using OsuClient.Game.Graphics;
 using OsuClient.Game.Screens.Gameplay;
 using OsuClient.Game.Screens.Results;
 using OsuClient.Game.Screens.SongSelect;
@@ -26,7 +29,7 @@ namespace OsuClient.Tests.Visual
         // A circle, a slider and a spinner packed close together: covers every
         // object type while still resolving in a couple of real seconds, well
         // inside the test scene's step timeout.
-        private const string quick_map =
+        internal const string quick_map =
             """
             osu file format v14
 
@@ -165,6 +168,40 @@ namespace OsuClient.Tests.Visual
             AddAssert("gameplay is paused", () => player.Paused);
             AddAssert("still on the gameplay screen", () => stack.CurrentScreen is PlayerScreen);
             AddAssert("the run has not ended", () => !player.Completed && !player.Failed);
+        }
+
+        [Test]
+        public void TestRestartFromThePauseMenuStartsAFreshRun()
+        {
+            pushGameplay(quick_map);
+
+            AddUntilStep("an object has been judged", () => player.ScoreState.TotalJudged >= 1);
+            AddStep("press escape", pressEscape);
+
+            PlayerScreen first = null!;
+
+            AddStep("press restart", () =>
+            {
+                first = player;
+
+                // Through the real button, found by its label, so the test
+                // covers the menu's wiring and not just the method behind it.
+                var label = player.ChildrenOfType<RetroText>().Single(t => t.Text == "Restart");
+                label.Parent!.TriggerClick();
+            });
+
+            AddUntilStep("a new run is on screen", () =>
+                stack.CurrentScreen is PlayerScreen current && current != first && current.IsLoaded);
+
+            AddAssert("it starts clean and unpaused", () =>
+            {
+                var current = (PlayerScreen)stack.CurrentScreen;
+                return !current.Paused && current.ScoreState.TotalJudged == 0;
+            });
+
+            // The paused run underneath must not be where quitting lands.
+            AddStep("leave the new run", () => stack.CurrentScreen.Exit());
+            AddUntilStep("the old run left with it", () => stack.CurrentScreen == null);
         }
 
         [Test]

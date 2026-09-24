@@ -67,6 +67,9 @@ namespace OsuClient.Game.Screens.Generation
             RelativeSizeAxes = Axes.Both;
         }
 
+        /// <summary>Raised with each object's kind as the assembly places it — not for a skip.</summary>
+        public Action<string>? ObjectPlaced;
+
         /// <summary>How many objects have been placed so far. Exposed for tests.</summary>
         public int PlacedCount => placed;
 
@@ -151,7 +154,12 @@ namespace OsuClient.Game.Screens.Generation
             int target = (int)Math.Round(progress * objects.Count);
 
             while (placed < target)
-                place(objects[placed++]);
+            {
+                var placing = objects[placed++];
+
+                place(placing);
+                ObjectPlaced?.Invoke(placing.Kind);
+            }
 
             updateCounter();
 

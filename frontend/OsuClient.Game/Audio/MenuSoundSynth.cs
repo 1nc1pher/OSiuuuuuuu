@@ -87,6 +87,101 @@ namespace OsuClient.Game.Audio
         }
 
         /// <summary>
+        /// The whoosh a screen change rides on: longer and heavier than the
+        /// strip's, and moving. It pans across the stereo field from the side
+        /// the ripple starts on to the side it leaves by, so the sound
+        /// travels the way the picture does.
+        ///
+        /// Built like <see cref="Whoosh"/> (a swept two-pole band-pass over
+        /// noise, under a swelling hump) with two differences: the sweep
+        /// climbs higher and lingers, and a low sine glides down under it for
+        /// weight, because a whole screen passing should sound bigger than a
+        /// strip sliding out.
+        /// </summary>
+        /// <param name="fromRight">True to start in the right ear and cross to the left.</param>
+        /// <param name="centred">
+        /// Hold it in the middle instead of panning — for a ripple that starts
+        /// at the centre of the screen and goes out every way at once.
+        /// </param>
+        public static byte[] TransitionWhoosh(bool fromRight, bool centred = false)
+        {
+            const double duration = 0.95;
+            const double low_cutoff = 260;
+            const double peak_cutoff = 2600;
+            const double rumble_cutoff = 140;
+            const double target_peak = 0.85;
+
+            int samples = (int)(sample_rate * duration);
+            var left = new float[samples];
+            var right = new float[samples];
+
+            // Its own seed, so it is not the strip's whoosh played longer.
+            var random = new Random(9191);
+
+            double stageOne = 0;
+            double stageTwo = 0;
+            double rumble = 0;
+            double subPhase = 0;
+
+            for (int i = 0; i < samples; i++)
+            {
+                double t = i / (double)sample_rate;
+                double u = t / duration;
+
+                // Peaks a little under halfway through, near the moment the
+                // ripple covers the screen, then tails off as the new screen
+                // shows.
+                double envelope = Math.Sin(Math.PI * Math.Pow(u, 0.6));
+
+                double cutoff = low_cutoff + (peak_cutoff - low_cutoff) * Math.Sin(Math.PI * Math.Pow(u, 0.8));
+                double coefficient = 1 - Math.Exp(-2 * Math.PI * cutoff / sample_rate);
+
+                double noise = random.NextDouble() * 2 - 1;
+
+                stageOne += coefficient * (noise - stageOne);
+                stageTwo += coefficient * (stageOne - stageTwo);
+                rumble += (1 - Math.Exp(-2 * Math.PI * rumble_cutoff / sample_rate)) * (stageTwo - rumble);
+
+                double air = stageTwo - rumble;
+
+                // 110 Hz gliding down to 55, and only through the first half:
+                // felt more than heard, so it does not muddy the music.
+                double subFrequency = 110 * Math.Pow(0.5, u);
+                subPhase += 2 * Math.PI * subFrequency / sample_rate;
+                double sub = Math.Sin(subPhase) * Math.Pow(Math.Max(0, 1 - u * 1.8), 2) * 0.35;
+
+                double mono = envelope * air + sub;
+
+                // Equal-power pan from one side to the other, eased so it
+                // lingers at each end and crosses quickly in the middle.
+                double travel = 0.5 - 0.5 * Math.Cos(Math.PI * u);
+                double position = centred ? 0.5 : fromRight ? 1 - travel : travel; // 0 = left, 1 = right
+                double angle = position * Math.PI / 2;
+
+                left[i] = (float)(mono * Math.Cos(angle));
+                right[i] = (float)(mono * Math.Sin(angle));
+            }
+
+            float peak = 0;
+
+            for (int i = 0; i < samples; i++)
+                peak = Math.Max(peak, Math.Max(Math.Abs(left[i]), Math.Abs(right[i])));
+
+            if (peak > 0)
+            {
+                float scale = (float)(target_peak / peak);
+
+                for (int i = 0; i < samples; i++)
+                {
+                    left[i] *= scale;
+                    right[i] *= scale;
+                }
+            }
+
+            return WavEncoder.EncodeStereo(left, right, sample_rate);
+        }
+
+        /// <summary>
         /// Scales the whole buffer so its loudest sample sits at
         /// <paramref name="target"/>.
         ///

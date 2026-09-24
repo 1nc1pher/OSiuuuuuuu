@@ -11,7 +11,8 @@ namespace OsuClient.Game.Screens.Gameplay
 {
     /// <summary>
     /// The menu shown while gameplay is paused: continue where you left off,
-    /// or give up and go back to song select.
+    /// start the map again from the top, or give up and go back to song
+    /// select.
     ///
     /// Styled like <see cref="Results.ResultsScreen"/> — the beatmap's own
     /// background blurred behind a dim, with the retro faces over it — since
@@ -26,9 +27,11 @@ namespace OsuClient.Game.Screens.Gameplay
         private const double fade_duration = 250;
 
         private static readonly Color4 continue_colour = new Color4(0.4f, 0.8f, 1f, 1f);
+        private static readonly Color4 restart_colour = new Color4(1f, 0.78f, 0.35f, 1f);
         private static readonly Color4 quit_colour = new Color4(1f, 0.4f, 0.4f, 1f);
 
-        public PauseOverlay(string? backgroundPath, string title, string difficulty, Action onContinue, Action onQuit)
+        public PauseOverlay(string? backgroundPath, string title, string difficulty,
+                            Action onContinue, Action onRestart, Action onQuit)
         {
             RelativeSizeAxes = Axes.Both;
             Alpha = 0;
@@ -93,6 +96,7 @@ namespace OsuClient.Game.Screens.Gameplay
                             Margin = new MarginPadding { Bottom = 18 },
                         },
                         new PauseButton("Continue", continue_colour, onContinue),
+                        new PauseButton("Restart", restart_colour, onRestart),
                         new PauseButton("Quit to song select", quit_colour, onQuit),
                         new RetroText
                         {

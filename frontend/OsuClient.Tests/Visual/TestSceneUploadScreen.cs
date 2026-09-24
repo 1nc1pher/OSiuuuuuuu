@@ -3,6 +3,7 @@ using System.Linq;
 using NUnit.Framework;
 using osu.Framework.Graphics;
 using osu.Framework.Screens;
+using osu.Framework.Testing;
 using OsuClient.Game.Backend;
 using OsuClient.Game.Screens.Generation;
 
@@ -74,6 +75,93 @@ namespace OsuClient.Tests.Visual
 
             AddAssert("no file yet", () => upload.SelectedAudioPath == null);
             AddAssert("generate is not offered", () => !upload.CanGenerate);
+        }
+
+        /// <summary>A second of real tone, so the deck has a "menu song" that actually loads.</summary>
+        private static string toneFile()
+        {
+            string path = Path.Combine(Path.GetTempPath(), "osuclient-deck-" + Path.GetRandomFileName() + ".wav");
+            const int rate = 44100;
+
+            using var writer = new BinaryWriter(File.Create(path));
+
+            writer.Write("RIFF"u8.ToArray());
+            writer.Write(36 + rate * 2);
+            writer.Write("WAVEfmt "u8.ToArray());
+            writer.Write(16);
+            writer.Write((short)1);
+            writer.Write((short)1);
+            writer.Write(rate);
+            writer.Write(rate * 2);
+            writer.Write((short)2);
+            writer.Write((short)16);
+            writer.Write("data"u8.ToArray());
+            writer.Write(rate * 2);
+
+            for (int i = 0; i < rate; i++)
+                writer.Write((short)(System.Math.Sin(2 * System.Math.PI * 440 * i / rate) * 8000));
+
+            return path;
+        }
+
+        [Test]
+        public void TestTheMenuSongPlaysOnUnderTheDeckAndStopsForGeneration()
+        {
+            TapeDeckMusic music = null!;
+
+            AddStep("push upload screen with the menu's song", () =>
+            {
+                Child = stack = new ScreenStack { RelativeSizeAxes = Axes.Both };
+                stack.Push(upload = new UploadScreen(null, toneFile(), 0));
+            });
+
+            AddUntilStep("loaded", () => upload.IsLoaded);
+            AddStep("find the music", () => music = upload.ChildrenOfType<TapeDeckMusic>().Single());
+
+            AddUntilStep("playing", () => music.IsPlaying);
+            AddAssert("slowed, as a remix", () => music.Track!.Frequency.Value == TapeDeckMusic.Rate);
+            AddUntilStep("fades up to its quiet level", () => music.Track!.Volume.Value > TapeDeckMusic.Volume * 0.95);
+
+            // Anything pushed over the deck — in practice the generation
+            // screen, which plays the new map's own audio — silences it.
+            AddStep("push a screen over the deck", () => upload.Push(new Screen()));
+            AddUntilStep("stopped", () => !music.IsPlaying);
+
+            AddStep("come back", () => stack.CurrentScreen.Exit());
+            AddUntilStep("playing again", () => music.IsPlaying);
+        }
+
+        [Test]
+        public void TestCoverArtGoesInTheCaseAndCanBeCleared()
+        {
+            string image = Path.Combine(Path.GetTempPath(), "osuclient-cover-" + Path.GetRandomFileName() + ".png");
+
+            using (var picture = new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(64, 64))
+                SixLabors.ImageSharp.ImageExtensions.SaveAsPng(picture, image);
+
+            pushUpload();
+
+            CoverArtCard card = null!;
+            AddStep("find the case", () => card = upload.ChildrenOfType<CoverArtCard>().Single());
+            AddAssert("empty to begin with", () => !card.HasImage && upload.SelectedCoverPath == null);
+
+            AddStep("choose cover art", () => upload.ChooseCover(image));
+            AddAssert("queued", () => upload.SelectedCoverPath == image);
+            AddAssert("in the case", () => card.HasImage);
+
+            AddStep("press clear", () =>
+                card.ChildrenOfType<OsuClient.Game.Graphics.RetroText>().Single(t => t.Text == "CLEAR").Parent!.TriggerClick());
+            AddAssert("gone again", () => !card.HasImage && upload.SelectedCoverPath == null);
+        }
+
+        [Test]
+        public void TestANonImageIsRefusedAsCoverArt()
+        {
+            pushUpload();
+
+            AddStep("offer a text file as cover", () => upload.ChooseCover(textFile));
+            AddAssert("nothing queued", () => upload.SelectedCoverPath == null);
+            AddAssert("said why", () => upload.StatusMessage.Contains("cover art"));
         }
 
         [Test]

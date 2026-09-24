@@ -18,6 +18,7 @@ using OsuClient.Game.Beatmaps.HitObjects;
 using OsuClient.Game.Graphics;
 using OsuClient.Game.Input;
 using OsuClient.Game.Screens.Gameplay.HUD;
+using OsuClient.Game.Scores;
 using OsuClient.Game.Screens.Results;
 using OsuClient.Game.Screens.SongSelect;
 using osuTK;
@@ -106,6 +107,10 @@ namespace OsuClient.Game.Screens.Gameplay
         private bool failed;
         private bool paused;
         private bool resultsQueued;
+
+        /// <summary>Where a finished run is kept if it is a best. Null outside the game, as in tests.</summary>
+        [Resolved(CanBeNull = true)]
+        private HighScoreStore? highScores { get; set; }
         private double? lastDrainTime;
 
         public PlayerScreen(BeatmapSelection selection)
@@ -310,6 +315,7 @@ namespace OsuClient.Game.Screens.Gameplay
                     $"{Beatmap.Metadata.Artist} - {Beatmap.Metadata.Title}",
                     Beatmap.Metadata.Version,
                     onContinue: resume,
+                    onRestart: restart,
                     onQuit: exitToSongSelect),
             };
         }
@@ -684,6 +690,14 @@ namespace OsuClient.Game.Screens.Gameplay
             // banner should be able to edit the result.
             var result = ResultsScreen.Result.From(Beatmap, scoreProcessor, failed, selection.Entry.Set?.BackgroundPath);
 
+            // Kept now too, for the same reason: the run is decided here. What
+            // it had to beat is read first, so the results can say.
+            if (highScores != null)
+            {
+                result.PreviousBest = highScores.Get(Beatmap.ContentHash)?.Score;
+                result.NewHighScore = highScores.Submit(Beatmap.ContentHash, result);
+            }
+
             Scheduler.AddDelayed(() =>
             {
                 if (!this.IsCurrentScreen())
@@ -860,6 +874,30 @@ namespace OsuClient.Game.Screens.Gameplay
             }
 
             base.OnMouseUp(e);
+        }
+
+        /// <summary>
+        /// Plays the same map again from the top, as a fresh screen.
+        ///
+        /// A new player is pushed over this one rather than this one being
+        /// reset in place — every piece of run state (score, combo, health,
+        /// judged objects, the break and skip overlays) starts clean without a
+        /// reset path to keep in step with each of them. Marked not valid for
+        /// resume, this one is then exited along with the new one when that
+        /// leaves, so quitting still lands on song select, not back here.
+        /// Pushed rather than going back to song select to push again, which
+        /// would flash song select and its preview audio while the new player
+        /// loads.
+        /// </summary>
+        private void restart()
+        {
+            if (!this.IsCurrentScreen())
+                return;
+
+            track?.Stop();
+            ValidForResume = false;
+
+            this.Push(new PlayerScreen(selection));
         }
 
         private void exitToSongSelect()

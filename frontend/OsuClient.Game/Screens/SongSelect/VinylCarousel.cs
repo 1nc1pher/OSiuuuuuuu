@@ -70,6 +70,13 @@ namespace OsuClient.Game.Screens.SongSelect
         /// <summary>Fired when the highlighted song is confirmed (clicked again).</summary>
         public Action<BeatmapLibraryEntry>? SelectionConfirmed;
 
+        /// <summary>
+        /// Raised when the record turns to another song — scroll, click or
+        /// key, but not when a search re-picks silently. True when it turned
+        /// forward (towards later songs), taking the short way round.
+        /// </summary>
+        public Action<bool>? Turned;
+
         private readonly Container ring;
         private readonly CircularContainer sheen;
         private readonly Container sheenBand;
@@ -549,7 +556,13 @@ namespace OsuClient.Game.Screens.SongSelect
             if (entries.Count == 0 || index == selectedIndex)
                 return;
 
+            // The short way round, as the ring itself turns: stepping off the
+            // last song onto the first is a step forward, not a lap back.
+            int step = ((index - selectedIndex) % entries.Count + entries.Count) % entries.Count;
+            bool forward = step <= entries.Count / 2;
+
             selectedIndex = index;
+            Turned?.Invoke(forward);
 
             animateRingTo(rotationFor(index));
             applySelectionVisuals(snap_duration);
