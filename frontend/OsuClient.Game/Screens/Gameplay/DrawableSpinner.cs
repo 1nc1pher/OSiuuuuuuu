@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using osu.Framework.Graphics;
+using osu.Framework.Graphics.Colour;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Effects;
 using osu.Framework.Graphics.Shapes;
@@ -7,6 +9,8 @@ using osu.Framework.Graphics.Sprites;
 using osu.Framework.Graphics.UserInterface;
 using OsuClient.Game.Beatmaps;
 using OsuClient.Game.Beatmaps.HitObjects;
+using OsuClient.Game.Graphics;
+using OsuClient.Game.Graphics.Rack;
 using osuTK;
 using osuTK.Graphics;
 
@@ -17,13 +21,13 @@ namespace OsuClient.Game.Screens.Gameplay
     /// object's duration. As in osu!, no key needs to be held — only cursor
     /// movement counts.
     ///
-    /// Visuals follow lazer's argon-style spinner: a ring of tick marks that
-    /// rotates with the spin, two glowing meters either side of the circle
-    /// that fill as progress is made, and a colour glow that grows out of the
-    /// centre to fill the whole disc. That glow's colour is
-    /// <see cref="DrawableHitObject.ComboColour"/> for now — the same value
-    /// Phase 6 of FRONTEND_PLAN.md earmarks to become skin/theme provided, so
-    /// the spinner picks up per-song theming for free once that lands.
+    /// Drawn as a turntable: a record on a chrome platter, turning with the
+    /// player's spin, its label in <see cref="DrawableHitObject.ComboColour"/>.
+    /// The platter's strobe ring tells the player whether they are spinning
+    /// fast enough — it drifts until they are, then stands still (see
+    /// <c>updateSpeed</c>) — and an RPM readout below the disc turns from
+    /// amber to mint at the same moment. The two meters either side of the
+    /// disc fill as progress is made.
     ///
     /// How much spinning is required comes from the beatmap's Overall
     /// Difficulty via <see cref="JudgementProcessor.SpinsPerMinute"/>, and the
@@ -36,26 +40,54 @@ namespace OsuClient.Game.Screens.Gameplay
         private const float disc_radius = 140;
         private const float diameter = disc_radius * 2;
 
-        /// <summary>Dashes evenly spaced around the rim, pointing outward.</summary>
-        private const int tick_count = 24;
-        private const float tick_length = 22f;
-        private const float tick_thickness = 3f;
+        /// <summary>Dots on the platter's strobe ring.</summary>
+        private const int strobe_dots = 60;
 
-        /// <summary>Radius the inner end of a tick sits at, just inside the outline.</summary>
-        private const float tick_inset = disc_radius * 0.80f;
+        /// <summary>
+        /// How opaque the platter's and the record's surfaces are. Low on
+        /// purpose: the next objects often appear before a spinner ends, and
+        /// they must be visible through it.
+        /// </summary>
+        private const float platter_alpha = 0.22f;
+
+        private const float record_alpha = 0.35f;
+
+        /// <summary>Grooves pressed into the record, drawn as faint rings.</summary>
+        private const int groove_count = 5;
+
+        /// <summary>How quickly the measured spin speed follows the real one, in milliseconds.</summary>
+        private const double speed_smoothing = 160;
+
+        /// <summary>
+        /// How often the RPM readout may change, in milliseconds. Its text is
+        /// rendered to a texture whenever it changes, and a live speed would
+        /// change it every frame; a few times a second is all anyone can read.
+        /// </summary>
+        private const double readout_interval = 120;
+
+        /// <summary>The readout rounds to this many RPM, so small wobbles don't redraw it.</summary>
+        private const double readout_step = 5;
 
         private readonly double requiredSpins;
 
+        /// <summary>The average speed that completes the spinner exactly on time, in degrees per millisecond.</summary>
+        private readonly double requiredRate;
+
         private readonly Container body;
-        private readonly Container rotor;
-        private readonly Circle centreGlow;
+        private readonly Container record;
+        private readonly Container strobe;
         private readonly SideMeter leftMeter;
         private readonly SideMeter rightMeter;
-        private readonly SpriteText progressText;
+        private readonly SegmentReadout rpmReadout;
 
         private double? lastCursorAngle;
         private double accumulatedDegrees;
         private int bonusSpinsAwarded;
+
+        private double? lastUpdateTime;
+        private double lastAccumulated;
+        private double spinRate;
+        private double lastReadoutAt = double.NegativeInfinity;
 
         public DrawableSpinner(SpinnerData data, BeatmapDifficulty difficulty, Color4 comboColour)
             : base(data, difficulty, comboColour)
@@ -63,6 +95,7 @@ namespace OsuClient.Game.Screens.Gameplay
             double spinsPerMinute = JudgementProcessor.SpinsPerMinute(difficulty.OverallDifficulty);
 
             requiredSpins = Math.Max(1, data.Duration / 1000.0 * spinsPerMinute / 60.0);
+            requiredRate = requiredSpins * 360 / Math.Max(1, data.Duration);
 
             InternalChildren = new Drawable[]
             {
@@ -74,118 +107,166 @@ namespace OsuClient.Game.Screens.Gameplay
                     Size = new Vector2(diameter),
                     Children = new Drawable[]
                     {
-                        // Dark backdrop, so the playfield behind doesn't show
-                        // through the disc before any colour builds up.
+                        // The platter, see-through: objects arriving behind the
+                        // spinner as it ends have to stay visible through it,
+                        // so only its chrome rim is solid.
                         new Circle
                         {
                             RelativeSizeAxes = Axes.Both,
-                            Colour = new Color4(0.05f, 0.05f, 0.08f, 0.55f),
+                            Colour = new Color4(0.07f, 0.06f, 0.10f, platter_alpha),
                         },
-                        // The theme-coloured glow that grows out of the centre.
-                        // A Circle is a CircularContainer, so its masking shape
-                        // really is a circle and an edge effect on it glows as
-                        // a circle — unlike a plain Container, whose effect
-                        // would come out as the rectangle it masks to.
-                        centreGlow = new Circle
-                        {
-                            Anchor = Anchor.Centre,
-                            Origin = Anchor.Centre,
-                            RelativeSizeAxes = Axes.Both,
-                            Size = new Vector2(centre_glow_min_scale),
-                            Colour = comboColour,
-                            Alpha = 0,
-                            EdgeEffect = new EdgeEffectParameters
-                            {
-                                Type = EdgeEffectType.Glow,
-                                Colour = new Color4(comboColour.R, comboColour.G, comboColour.B, 0.6f),
-                                Radius = 40,
-                            },
-                        },
-                        // Centred origin, or the accumulated spin rotates the
-                        // whole ring about the corner of the disc and throws
-                        // the ticks off it entirely.
-                        rotor = new Container
-                        {
-                            Anchor = Anchor.Centre,
-                            Origin = Anchor.Centre,
-                            RelativeSizeAxes = Axes.Both,
-                            Children = createTicks(),
-                        },
-                        // The fixed circular boundary of the spinner.
-                        new Container
+                        new CircularContainer
                         {
                             RelativeSizeAxes = Axes.Both,
                             Masking = true,
-                            CornerRadius = disc_radius,
-                            BorderThickness = 4,
-                            BorderColour = new Color4(1f, 1f, 1f, 0.9f),
+                            BorderThickness = 5,
+                            BorderColour = ColourInfo.GradientVertical(RetroPalette.Chrome, RetroPalette.ChromeDark),
                             Child = new Box { RelativeSizeAxes = Axes.Both, Alpha = 0, AlwaysPresent = true },
+                        },
+                        // Centred origin, so turning it spins the dots round
+                        // the rim rather than swinging the ring off the disc.
+                        strobe = new Container
+                        {
+                            Anchor = Anchor.Centre,
+                            Origin = Anchor.Centre,
+                            RelativeSizeAxes = Axes.Both,
+                            Children = createStrobeDots(),
+                        },
+                        record = new Container
+                        {
+                            Anchor = Anchor.Centre,
+                            Origin = Anchor.Centre,
+                            RelativeSizeAxes = Axes.Both,
+                            Size = new Vector2(0.86f),
+                            Children = createRecord(comboColour),
                         },
                         leftMeter = new SideMeter(mirrored: false),
                         rightMeter = new SideMeter(mirrored: true),
-                        // Centre marker: a ring around a dot, as in the
-                        // reference skin.
-                        new CircularContainer
-                        {
-                            Anchor = Anchor.Centre,
-                            Origin = Anchor.Centre,
-                            Size = new Vector2(22),
-                            Masking = true,
-                            BorderThickness = 3,
-                            BorderColour = Color4.White,
-                            Child = new Box { RelativeSizeAxes = Axes.Both, Alpha = 0, AlwaysPresent = true },
-                        },
+                        // The spindle.
                         new Circle
                         {
                             Anchor = Anchor.Centre,
                             Origin = Anchor.Centre,
-                            Size = new Vector2(6),
-                            Colour = Color4.White,
+                            Size = new Vector2(9),
+                            Colour = RetroPalette.Chrome,
                         },
                     },
                 },
-                progressText = new SpriteText
+                rpmReadout = new SegmentReadout(14)
                 {
                     Anchor = Anchor.TopLeft,
-                    Origin = Anchor.Centre,
-                    // Below the centre marker rather than behind it.
-                    Position = data.Position + new Vector2(0, 54),
-                    Font = FontUsage.Default.With(size: 24),
-                    Colour = new Color4(1f, 1f, 1f, 0.85f),
-                    Text = "Spin!",
+                    Origin = Anchor.TopCentre,
+                    // Below the disc, where it never covers the record.
+                    Position = data.Position + new Vector2(0, disc_radius + 14),
+                    Digits = 7,
+                    DisplayColour = RetroPalette.Amber,
+                    Text = "  0 RPM",
                 },
             };
         }
 
-        /// <summary>How wide the centre glow starts out, as a fraction of the disc.</summary>
-        private const float centre_glow_min_scale = 0.06f;
-
-        private static Drawable[] createTicks()
+        private static Drawable[] createStrobeDots()
         {
-            var ticks = new Drawable[tick_count];
+            var dots = new Drawable[strobe_dots];
 
-            for (int i = 0; i < tick_count; i++)
+            for (int i = 0; i < strobe_dots; i++)
             {
                 // A zero-sized wrapper pinned to the centre: rotating it swings
-                // the offset tick around the rim without any per-tick trigonometry.
-                ticks[i] = new Container
+                // the offset dot round the rim with no per-dot trigonometry.
+                dots[i] = new Container
                 {
                     Anchor = Anchor.Centre,
                     Origin = Anchor.Centre,
-                    Rotation = i * (360f / tick_count),
+                    Rotation = i * (360f / strobe_dots),
                     Child = new Box
                     {
-                        Anchor = Anchor.BottomCentre,
-                        Origin = Anchor.BottomCentre,
-                        Y = -tick_inset,
-                        Size = new Vector2(tick_thickness, tick_length),
-                        Colour = Color4.White,
-                        Alpha = 0.75f,
+                        Anchor = Anchor.Centre,
+                        Origin = Anchor.Centre,
+                        Y = -disc_radius * 0.905f,
+                        Size = new Vector2(4, 6),
+                        Colour = RetroPalette.Amber,
                     },
                 };
             }
 
-            return ticks;
+            return dots;
+        }
+
+        private static Drawable[] createRecord(Color4 comboColour)
+        {
+            var parts = new List<Drawable>
+            {
+                new Circle
+                {
+                    RelativeSizeAxes = Axes.Both,
+                    Colour = new Color4(RetroPalette.Vinyl.R, RetroPalette.Vinyl.G, RetroPalette.Vinyl.B, record_alpha),
+                },
+            };
+
+            // Faint grooves across the playing surface.
+            for (int i = 0; i < groove_count; i++)
+            {
+                float size = 0.5f + i * 0.1f;
+
+                parts.Add(new CircularContainer
+                {
+                    Anchor = Anchor.Centre,
+                    Origin = Anchor.Centre,
+                    RelativeSizeAxes = Axes.Both,
+                    Size = new Vector2(size),
+                    Masking = true,
+                    BorderThickness = 1.5f,
+                    BorderColour = new Color4(1f, 1f, 1f, 0.07f),
+                    Child = new Box { RelativeSizeAxes = Axes.Both, Alpha = 0, AlwaysPresent = true },
+                });
+            }
+
+            // Light catching the grooves: off-centre, so the record visibly
+            // turns — everything else on it is a circle.
+            parts.Add(new CircularProgress
+            {
+                Anchor = Anchor.Centre,
+                Origin = Anchor.Centre,
+                RelativeSizeAxes = Axes.Both,
+                Size = new Vector2(0.84f),
+                Progress = 0.12,
+                InnerRadius = 0.05f,
+                Blending = BlendingParameters.Additive,
+                Colour = new Color4(1f, 1f, 1f, 0.22f),
+            });
+            parts.Add(new CircularProgress
+            {
+                Anchor = Anchor.Centre,
+                Origin = Anchor.Centre,
+                RelativeSizeAxes = Axes.Both,
+                Size = new Vector2(0.64f),
+                Progress = 0.09,
+                InnerRadius = 0.06f,
+                Rotation = 180,
+                Blending = BlendingParameters.Additive,
+                Colour = new Color4(1f, 1f, 1f, 0.18f),
+            });
+
+            // The label, in the combo colour, with a print mark so it visibly
+            // turns too.
+            parts.Add(new Circle
+            {
+                Anchor = Anchor.Centre,
+                Origin = Anchor.Centre,
+                RelativeSizeAxes = Axes.Both,
+                Size = new Vector2(0.34f),
+                Colour = new Color4(comboColour.R, comboColour.G, comboColour.B, 0.6f),
+            });
+            parts.Add(new Box
+            {
+                Anchor = Anchor.Centre,
+                Origin = Anchor.BottomCentre,
+                RelativeSizeAxes = Axes.Both,
+                Size = new Vector2(0.03f, 0.15f),
+                Colour = new Color4(0f, 0f, 0f, 0.45f),
+            });
+
+            return parts.ToArray();
         }
 
         protected override void LoadComplete()
@@ -196,7 +277,6 @@ namespace OsuClient.Game.Screens.Gameplay
                 this.FadeIn(FadeInDuration, Easing.OutQuint);
         }
 
-        /// <summary>Spinners are spun, not clicked, so they never take a press.</summary>
         public override bool AcceptsPress => false;
 
         public override bool TryPress(double time, Vector2 cursorScreenSpace) => false;
@@ -208,15 +288,21 @@ namespace OsuClient.Game.Screens.Gameplay
             else
                 lastCursorAngle = null;
 
+            updateSpeed(time);
+
             if (!IsJudged && time >= EndTime)
                 ApplyJudgement(time, JudgementProcessor.JudgeSpinner(Progress));
         }
 
-        /// <summary>How much of the required spinning has been done, 0 to 1 (and beyond).</summary>
         public double Progress => accumulatedDegrees / 360.0 / requiredSpins;
 
-        /// <summary>Full extra rotations completed past the requirement, each already paid out as a bonus. Exposed for tests.</summary>
         public int BonusSpinsAwarded => bonusSpinsAwarded;
+
+        /// <summary>The measured spin speed, in revolutions per minute. Exposed for tests.</summary>
+        public double Rpm => spinRate * 60000 / 360;
+
+        /// <summary>Whether the player is spinning at least as fast as the spinner needs. Exposed for tests.</summary>
+        public bool FastEnough => spinRate >= requiredRate;
 
         private void trackRotation(Vector2 cursorScreenSpace)
         {
@@ -240,31 +326,61 @@ namespace OsuClient.Game.Screens.Gameplay
                 accumulatedDegrees += Math.Abs(delta);
                 checkForBonusSpins();
 
-                rotor.Rotation += (float)delta;
+                record.Rotation += (float)delta;
 
                 float completion = (float)Math.Clamp(Progress, 0, 1);
 
-                centreGlow.Size = new Vector2(centre_glow_min_scale + (1 - centre_glow_min_scale) * completion);
-                centreGlow.Alpha = 0.25f + 0.37f * completion;
-
-                rotor.Alpha = 0.55f + 0.45f * completion;
-
                 leftMeter.Progress = completion;
                 rightMeter.Progress = completion;
-
-                progressText.Text = completion >= 1 ? "Full!" : $"{completion * 100:0}%";
             }
 
             lastCursorAngle = angle;
         }
 
         /// <summary>
-        /// Pays out a bonus for each full extra rotation completed once the
-        /// required amount is already met — the reward for continuing to
-        /// spin after the bar fills rather than letting go. Counted in whole
-        /// 360° units, and never re-paid for the same rotation twice even
-        /// though this runs every frame.
+        /// Measures how fast the player is spinning and drives the strobe ring
+        /// and the RPM readout from it.
+        ///
+        /// The strobe dots are drawn turning at the difference between the
+        /// player's speed and the speed the spinner needs, the way a real
+        /// deck's strobe appears to drift until the platter is at speed. Too
+        /// slow and the ring drifts backwards; fast enough and it stands
+        /// still, so "the dots have stopped" means "keep this up".
         /// </summary>
+        private void updateSpeed(double time)
+        {
+            if (lastUpdateTime is double last && time > last)
+            {
+                double dt = time - last;
+                double instant = (accumulatedDegrees - lastAccumulated) / dt;
+
+                spinRate += (instant - spinRate) * (1 - Math.Exp(-dt / speed_smoothing));
+
+                if (time >= StartTime && time <= EndTime)
+                    strobe.Rotation += (float)(Math.Min(0, spinRate - requiredRate) * dt);
+            }
+
+            lastUpdateTime = time;
+            lastAccumulated = accumulatedDegrees;
+
+            if (Math.Abs(time - lastReadoutAt) < readout_interval)
+                return;
+
+            lastReadoutAt = time;
+
+            bool complete = Progress >= 1;
+            double shown = Math.Min(999, Math.Round(Rpm / readout_step) * readout_step);
+            string text = complete ? "   FULL" : $"{shown,3:0} RPM";
+
+            if (rpmReadout.Text != text)
+                rpmReadout.Text = text;
+
+            var colour = complete || FastEnough ? RetroPalette.Mint : RetroPalette.Amber;
+
+            if (rpmReadout.DisplayColour != colour)
+                rpmReadout.DisplayColour = colour;
+        }
+
         private void checkForBonusSpins()
         {
             double requiredDegrees = requiredSpins * 360.0;
@@ -287,21 +403,6 @@ namespace OsuClient.Game.Screens.Gameplay
             return exit_duration;
         }
 
-        /// <summary>
-        /// One of the two bracket-shaped meters either side of the spinner: a
-        /// dim static track with a bright white fill that grows out of the
-        /// middle of the bracket in both directions as the spin progresses.
-        ///
-        /// Each bracket is one arc plus a copy mirrored about the horizontal
-        /// axis, so the two halves stay symmetric about the point they grow
-        /// from whichever way <see cref="CircularProgress"/> itself sweeps.
-        ///
-        /// The glow is a <see cref="BufferedContainer"/> blur of the fills
-        /// themselves rather than an <see cref="EdgeEffectParameters"/>: an
-        /// edge effect renders the container's *masking shape*, which for a
-        /// plain container is its rectangle — a white rectangle the size of
-        /// the playfield, not anything arc-shaped.
-        /// </summary>
         private partial class SideMeter : CompositeDrawable
         {
             /// <summary>Degrees of the circle one whole bracket covers.</summary>
@@ -354,8 +455,8 @@ namespace OsuClient.Game.Screens.Gameplay
                         EffectColour = new Color4(1f, 1f, 1f, 0.9f),
                         Children = new Drawable[]
                         {
-                            half(upperFill = arc(centreAngle, Color4.White, 0), flipped: false),
-                            half(lowerFill = arc(centreAngle, Color4.White, 0), flipped: true),
+                            half(upperFill = arc(centreAngle, RetroPalette.Amber, 0), flipped: false),
+                            half(lowerFill = arc(centreAngle, RetroPalette.Amber, 0), flipped: true),
                         },
                     },
                 };

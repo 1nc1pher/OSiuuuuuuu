@@ -138,6 +138,12 @@ namespace OsuClient.Tests.Visual
                     return new Game.Screens.Gameplay.PlayerScreen(
                         new Game.Screens.SongSelect.BeatmapSelection(entry, set.Beatmaps[0]));
                 },
+                // The same folder, played by a simple autoplay (see
+                // AutoplayScene), for judgements, the combo counter and a
+                // spinner in motion.
+                ["gameplay-autoplay"] = () => new AutoplayScene(
+                    Environment.GetEnvironmentVariable("OSU_SCREENSHOT_SET")
+                    ?? throw new InvalidOperationException("set OSU_SCREENSHOT_SET to a beatmap folder")),
                 // The pause menu on its own, shown, with all three choices.
                 ["pause-menu"] = () =>
                 {

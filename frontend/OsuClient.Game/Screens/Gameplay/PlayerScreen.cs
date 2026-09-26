@@ -3,10 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using osu.Framework.Allocation;
+using osu.Framework.Bindables;
 using osu.Framework.Audio;
 using osu.Framework.Audio.Track;
 using osu.Framework.Graphics;
+using osu.Framework.Graphics.Colour;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Rendering;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Input.Events;
 using osu.Framework.IO.Stores;
@@ -46,16 +49,34 @@ namespace OsuClient.Game.Screens.Gameplay
         /// <summary>Clear space between a HUD bar and whatever sits next to it.</summary>
         private const float hud_spacing = 10;
 
+        /// <summary>
+        /// The window size the game screen was designed and tuned in —
+        /// osu.Framework's default window. The playfield and HUD are laid out
+        /// at this size and scaled uniformly to the actual window, so a
+        /// fullscreen window shows the same proportions, just larger.
+        /// </summary>
+        private static readonly Vector2 design_size = new Vector2(1366, 768);
+
         /// <summary>How far past the key overlay bars the side flash is allowed to reach.</summary>
         private const float beat_flash_overshoot = 20;
 
+        /// <summary>
+        /// Combo colours, from the palette the rest of the game shares — the
+        /// same neon as song select's wheel and the difficulty cassettes.
+        /// </summary>
         private static readonly Color4[] combo_colours =
         {
-            new Color4(1f, 0.75f, 0f, 1f),
-            new Color4(0f, 0.79f, 0f, 1f),
-            new Color4(0f, 0.6f, 1f, 1f),
-            new Color4(1f, 0f, 0.47f, 1f),
+            RetroPalette.Cyan,
+            RetroPalette.Magenta,
+            RetroPalette.Amber,
+            RetroPalette.Mint,
         };
+
+        /// <summary>How long a failed run's tape takes to wind down.</summary>
+        private const double tape_stop_duration = 1000;
+
+        /// <summary>The slowest the tape is wound down to before it is stopped outright.</summary>
+        private const double tape_stop_floor = 0.05;
 
         private readonly BeatmapSelection selection;
         private Beatmap Beatmap => selection.Beatmap;
@@ -90,9 +111,26 @@ namespace OsuClient.Game.Screens.Gameplay
         private ComboCounter comboCounter = null!;
         private HealthBar healthBar = null!;
         private SongProgressBar progressBar = null!;
-        private RetroText scoreText = null!;
-        private RetroText accuracyText = null!;
+        private ScorePanel scorePanel = null!;
+        private CountIn countIn = null!;
         private RetroText stateText = null!;
+        private Box failShade = null!;
+        private GameplayDeckSounds deckSounds = null!;
+
+        /// <summary>
+        /// The playing difficulty's own colour — its cassette's in song
+        /// select — for the label, the beat flash and the needle-drop cue.
+        /// </summary>
+        private Color4 accent;
+
+        /// <summary>
+        /// The track's speed, as a frequency adjustment: 1 while playing, run
+        /// down towards 0 when the run fails, so the music winds down like a
+        /// tape losing power rather than cutting off.
+        /// </summary>
+        private readonly BindableDouble tapeSpeed = new BindableDouble(1);
+
+        private int lastCombo;
         private PauseOverlay pauseOverlay = null!;
         private KeyTimingBar firstKeyBar = null!;
         private KeyTimingBar secondKeyBar = null!;
@@ -181,9 +219,17 @@ namespace OsuClient.Game.Screens.Gameplay
         public bool PerformanceOverlayVisible => performanceOverlay.State.Value == Visibility.Visible;
 
         [BackgroundDependencyLoader]
-        private void load()
+        private void load(IRenderer renderer)
         {
             hitSounds = new HitSoundPlayer(audio);
+
+            // Hit circles share one generated vinyl texture. Made here, while
+            // the screen loads in the background, rather than by the first
+            // circle to appear: circles load on the update thread mid-play,
+            // and generating it there was a hitch as the first note came in.
+            VinylTexture.Get(renderer);
+            deckSounds = new GameplayDeckSounds(audio);
+            accent = difficultyAccent();
 
             InternalChildren = new Drawable[]
             {
@@ -196,127 +242,136 @@ namespace OsuClient.Game.Screens.Gameplay
                 // Dimmed the way osu! dims gameplay backgrounds by default —
                 // without it, a bright or busy image behind the circles would
                 // fight with them for attention instead of just setting a mood.
+                // The dim carries song select's sunset grade, purple at the
+                // top to red at the bottom, at the same strength: the same
+                // single layer as a plain black dim, so it costs nothing.
                 new Box
                 {
                     RelativeSizeAxes = Axes.Both,
-                    Colour = new Color4(0f, 0f, 0f, 0.65f),
+                    Colour = ColourInfo.GradientVertical(
+                        new Color4(0.05f, 0.01f, 0.08f, 0.70f),
+                        new Color4(0.14f, 0.03f, 0.06f, 0.66f)),
                 },
-                // Behind the playfield and HUD: an ambient effect, not
-                // something that should ever compete with them for attention.
-                // Reaches a little past the key overlay's own bars (see
-                // beat_flash_overshoot) rather than stopping exactly at them.
-                beatFlash = new BeatBorderFlash(
-                    Beatmap, Beatmap.Difficulty, hud_padding + KeyTimingBar.BarWidth + beat_flash_overshoot),
-                playfield = new Container
-                {
-                    Anchor = Anchor.Centre,
-                    Origin = Anchor.Centre,
-                    Size = new Vector2(512, 384),
-                    // Everything below here runs on gameplay time, not wall time.
-                    Clock = gameplayClock.FrameClock,
-                    Child = hitObjectContainer = new Container { RelativeSizeAxes = Axes.Both },
-                },
-                // Padding rather than per-child margins: a relatively-sized
-                // child measures against this container's padded area, so the
-                // full-width progress bar ends up inside the window instead of
-                // running off the right edge by the width of its own margin.
-                new Container
+                // Drains the picture when a run fails. Invisible, and so not
+                // drawn at all, until then.
+                failShade = new Box
                 {
                     RelativeSizeAxes = Axes.Both,
-                    Padding = new MarginPadding(hud_padding),
+                    Colour = new Color4(0.04f, 0.04f, 0.05f, 1f),
+                    Alpha = 0,
+                },
+                // Everything the player reads or aims at, laid out at the
+                // window size the screen was designed in and scaled to the
+                // real window as one piece. Sized in raw pixels instead, a
+                // fullscreen window grew the playfield (and so the circles)
+                // past its designed share of the screen while every HUD panel
+                // stayed its small-window size. The layout still fills the
+                // whole window — only sizes scale — so panels anchored to an
+                // edge stay on that edge.
+                new DrawSizePreservingFillContainer
+                {
+                    TargetDrawSize = design_size,
+                    Strategy = DrawSizePreservationStrategy.Minimum,
                     Children = new Drawable[]
                     {
-                        healthBar = new HealthBar
-                        {
-                            Anchor = Anchor.TopLeft,
-                            Origin = Anchor.TopLeft,
-                        },
-                        progressBar = new SongProgressBar
-                        {
-                            Anchor = Anchor.BottomCentre,
-                            Origin = Anchor.BottomCentre,
-                        },
-                        comboCounter = new ComboCounter
-                        {
-                            // Clear of the progress bar along the bottom edge.
-                            Margin = new MarginPadding { Bottom = SongProgressBar.BarHeight + hud_spacing },
-                        },
-                        new FillFlowContainer
-                        {
-                            Anchor = Anchor.TopRight,
-                            Origin = Anchor.TopRight,
-                            AutoSizeAxes = Axes.Both,
-                            Direction = FillDirection.Vertical,
-                            Spacing = new Vector2(0, 2),
-                            Children = new Drawable[]
-                            {
-                                scoreText = new RetroText
-                                {
-                                    Anchor = Anchor.TopRight,
-                                    Origin = Anchor.TopRight,
-                                    Font = RetroFontFamily.Display,
-                                    TextSize = 20,
-                                    Colour = Color4.White,
-                                    Text = "0",
-                                },
-                                accuracyText = new RetroText
-                                {
-                                    Anchor = Anchor.TopRight,
-                                    Origin = Anchor.TopRight,
-                                    Font = RetroFontFamily.Body,
-                                    TextSize = 15,
-                                    Colour = new Color4(0.8f, 0.8f, 0.88f, 1f),
-                                    Text = "100.00%",
-                                },
-                            },
-                        },
-                        new RetroText
-                        {
-                            Anchor = Anchor.TopLeft,
-                            Origin = Anchor.TopLeft,
-                            // Sits below the health bar rather than across it.
-                            Margin = new MarginPadding { Top = HealthBar.BarHeight + hud_spacing },
-                            Font = RetroFontFamily.Body,
-                            TextSize = 15,
-                            Colour = new Color4(0.7f, 0.7f, 0.8f, 1f),
-                            Text = $"{Beatmap.Metadata.Artist} - {Beatmap.Metadata.Title} [{Beatmap.Metadata.Version}]",
-                        },
-                        stateText = new RetroText
+                        // Behind the playfield and HUD: an ambient effect, not
+                        // something that should ever compete with them for attention.
+                        // Reaches a little past the key overlay's own bars (see
+                        // beat_flash_overshoot) rather than stopping exactly at them.
+                        beatFlash = new BeatBorderFlash(
+                            Beatmap, Beatmap.Difficulty, hud_padding + KeyTimingBar.BarWidth + beat_flash_overshoot, accent),
+                        playfield = new Container
                         {
                             Anchor = Anchor.Centre,
                             Origin = Anchor.Centre,
-                            Font = RetroFontFamily.Display,
-                            TextSize = 24,
-                            Colour = Color4.White,
-                            Alpha = 0,
+                            Size = new Vector2(512, 384),
+                            // Everything below here runs on gameplay time, not wall time.
+                            Clock = gameplayClock.FrameClock,
+                            Child = hitObjectContainer = new Container { RelativeSizeAxes = Axes.Both },
                         },
-                        // One panel per hit key, down either side of the
-                        // playfield and clear of it at any window size.
-                        firstKeyBar = new KeyTimingBar(Beatmap.Difficulty.OverallDifficulty)
+                        // Padding rather than per-child margins: a relatively-sized
+                        // child measures against this container's padded area, so the
+                        // full-width progress bar ends up inside the window instead of
+                        // running off the right edge by the width of its own margin.
+                        new Container
                         {
-                            Anchor = Anchor.CentreLeft,
-                            Origin = Anchor.CentreLeft,
+                            RelativeSizeAxes = Axes.Both,
+                            Padding = new MarginPadding(hud_padding),
+                            Children = new Drawable[]
+                            {
+                                healthBar = new HealthBar
+                                {
+                                    Anchor = Anchor.TopLeft,
+                                    Origin = Anchor.TopLeft,
+                                },
+                                progressBar = new SongProgressBar
+                                {
+                                    Anchor = Anchor.BottomCentre,
+                                    Origin = Anchor.BottomCentre,
+                                },
+                                comboCounter = new ComboCounter
+                                {
+                                    // Clear of the progress bar along the bottom edge.
+                                    Margin = new MarginPadding { Bottom = SongProgressBar.BarHeight + hud_spacing },
+                                },
+                                scorePanel = new ScorePanel
+                                {
+                                    Anchor = Anchor.TopRight,
+                                    Origin = Anchor.TopRight,
+                                },
+                                // The song on its cassette label, below the meter
+                                // rather than across it.
+                                new CassetteLabel(Beatmap.Metadata.Artist, Beatmap.Metadata.Title, Beatmap.Metadata.Version, accent)
+                                {
+                                    Anchor = Anchor.TopLeft,
+                                    Origin = Anchor.TopLeft,
+                                    Margin = new MarginPadding { Top = HealthBar.BarHeight + hud_spacing },
+                                },
+                                // Top centre: clear of the corners' HUD and of the
+                                // approach circles the first notes arrive through.
+                                countIn = new CountIn(Beatmap)
+                                {
+                                    Anchor = Anchor.TopCentre,
+                                    Origin = Anchor.TopCentre,
+                                },
+                                stateText = new RetroText
+                                {
+                                    Anchor = Anchor.Centre,
+                                    Origin = Anchor.Centre,
+                                    Font = RetroFontFamily.Display,
+                                    TextSize = 24,
+                                    Colour = RetroPalette.Text,
+                                    Alpha = 0,
+                                },
+                                // One panel per hit key, down either side of the
+                                // playfield and clear of it at any window size.
+                                firstKeyBar = new KeyTimingBar(Beatmap.Difficulty.OverallDifficulty)
+                                {
+                                    Anchor = Anchor.CentreLeft,
+                                    Origin = Anchor.CentreLeft,
+                                },
+                                secondKeyBar = new KeyTimingBar(Beatmap.Difficulty.OverallDifficulty)
+                                {
+                                    Anchor = Anchor.CentreRight,
+                                    Origin = Anchor.CentreRight,
+                                },
+                            },
                         },
-                        secondKeyBar = new KeyTimingBar(Beatmap.Difficulty.OverallDifficulty)
-                        {
-                            Anchor = Anchor.CentreRight,
-                            Origin = Anchor.CentreRight,
-                        },
+                        // Above the HUD, below the pause menu: one gap in the map at a
+                        // time is ever active, so only one of these two is ever shown.
+                        skipOverlay = new SkipOverlay(performSkip),
+                        performanceOverlay = new PerformanceOverlay(),
+                        // Above the HUD: while paused it covers everything, and while
+                        // hidden it takes no input at all.
+                        pauseOverlay = new PauseOverlay(
+                            selection.Entry.Set?.BackgroundPath,
+                            $"{Beatmap.Metadata.Artist} - {Beatmap.Metadata.Title}",
+                            Beatmap.Metadata.Version,
+                            onContinue: resume,
+                            onRestart: restart,
+                            onQuit: exitToSongSelect),
                     },
                 },
-                // Above the HUD, below the pause menu: one gap in the map at a
-                // time is ever active, so only one of these two is ever shown.
-                skipOverlay = new SkipOverlay(performSkip),
-                performanceOverlay = new PerformanceOverlay(),
-                // Above the HUD: while paused it covers everything, and while
-                // hidden it takes no input at all.
-                pauseOverlay = new PauseOverlay(
-                    selection.Entry.Set?.BackgroundPath,
-                    $"{Beatmap.Metadata.Artist} - {Beatmap.Metadata.Title}",
-                    Beatmap.Metadata.Version,
-                    onContinue: resume,
-                    onRestart: restart,
-                    onQuit: exitToSongSelect),
             };
         }
 
@@ -324,10 +379,34 @@ namespace OsuClient.Game.Screens.Gameplay
         {
             base.LoadComplete();
 
+            countIn.Counted += count => deckSounds.PlayCountTick(last: count == 1);
+
             loadTrack();
 
             if (hitObjects.Count == 0)
                 completeMap();
+        }
+
+        /// <summary>
+        /// The playing difficulty's colour, worked out the way song select
+        /// colours its cassettes: its place among the set's difficulties,
+        /// easiest first, spread across the palette's difficulty ramp.
+        /// </summary>
+        private Color4 difficultyAccent()
+        {
+            var difficulties = selection.Entry.Set?.Beatmaps
+                                        .OrderBy(DifficultyTier.SortKey)
+                                        .ToList();
+
+            if (difficulties == null || difficulties.Count == 0)
+                return RetroPalette.Cyan;
+
+            int index = difficulties.IndexOf(Beatmap);
+
+            if (index < 0)
+                index = difficulties.FindIndex(b => b.ContentHash == Beatmap.ContentHash);
+
+            return RetroPalette.ForDifficultyRank(Math.Max(0, index), difficulties.Count);
         }
 
         private void loadTrack()
@@ -348,6 +427,7 @@ namespace OsuClient.Game.Screens.Gameplay
             var store = new StorageBackedResourceStore(storage);
 
             track = audio.GetTrackStore(store).Get(Path.GetFileName(path));
+            track?.AddAdjustment(AdjustableProperty.Frequency, tapeSpeed);
         }
 
         protected override void Update()
@@ -355,6 +435,10 @@ namespace OsuClient.Game.Screens.Gameplay
             base.Update();
 
             updatePlayfieldScale();
+
+            // The tape only moves while the music actually plays: not during
+            // the silent lead-in, not while paused, not once a run has failed.
+            progressBar.Running = !paused && !failed && trackStarted && track?.IsRunning == true;
 
             // Paused: the gameplay clock stops being advanced, which freezes
             // everything downstream of it — hit object transforms, the hit
@@ -380,6 +464,10 @@ namespace OsuClient.Game.Screens.Gameplay
             {
                 track?.Start();
                 trackStarted = true;
+
+                // The needle meets the record as the music starts.
+                if (track != null)
+                    deckSounds.PlayNeedleDrop();
             }
 
             spawnDueObjects(time);
@@ -404,6 +492,7 @@ namespace OsuClient.Game.Screens.Gameplay
             updateBreakState(time);
             beatFlash.SetTime(time);
             backgroundPulse.SetTime(time);
+            countIn.SetTime(time);
 
             if (!completed && healthProcessor.HasFailed)
                 failMap();
@@ -445,6 +534,7 @@ namespace OsuClient.Game.Screens.Gameplay
             double span = Beatmap.LastHitObjectTime - start;
 
             progressBar.SetProgress(span > 0 ? (time - start) / span : 0);
+            progressBar.SetTime(Math.Clamp(time - start, 0, Math.Max(0, span)), Math.Max(0, span));
         }
 
         /// <summary>The break covering <paramref name="time"/>, if any — at most one ever can.</summary>
@@ -518,8 +608,13 @@ namespace OsuClient.Game.Screens.Gameplay
         {
             const float vertical_margin = 160f;
 
-            float availableHeight = Math.Max(100f, DrawSize.Y - vertical_margin);
-            float scale = Math.Min(DrawSize.X / 512f, availableHeight / 384f);
+            // Measured in the design-size layout the playfield sits in (see
+            // design_size), not in window pixels, so the playfield keeps the
+            // same share of the screen at any window size.
+            Vector2 area = playfield.Parent?.DrawSize ?? DrawSize;
+
+            float availableHeight = Math.Max(100f, area.Y - vertical_margin);
+            float scale = Math.Min(area.X / 512f, availableHeight / 384f);
 
             playfield.Scale = new Vector2(scale);
         }
@@ -571,6 +666,9 @@ namespace OsuClient.Game.Screens.Gameplay
                 hitSounds.PlayHit();
 
             showJudgementPopup(hitObject.Data.Position, result);
+
+            if (result != HitResult.Miss && hitObject.Data is HitCircleData)
+                showHitBurst(hitObject.Data.Position, judgementColour(result));
         }
 
         private void onTickJudged(DrawableHitObject hitObject, bool hit)
@@ -592,14 +690,25 @@ namespace OsuClient.Game.Screens.Gameplay
             updateHud();
 
             hitSounds.PlayTick();
-            showBonusPopup(hitObject.Data.Position);
+
+            // Above the spinner's label, over the dark record, where an
+            // amber number reads; on the label itself it vanished.
+            showBonusPopup(hitObject.Data.Position + new Vector2(0, -80));
         }
 
         private void updateHud()
         {
-            comboCounter.SetCombo(scoreProcessor.Combo);
-            scoreText.Text = $"{scoreProcessor.Score:N0}";
-            accuracyText.Text = $"{scoreProcessor.Accuracy:0.00}%";
+            int combo = scoreProcessor.Combo;
+
+            // The tape counter snapping back to zero is heard as well as seen.
+            if (combo == 0 && lastCombo > 0)
+                deckSounds.PlayCounterReset();
+
+            lastCombo = combo;
+
+            comboCounter.SetCombo(combo);
+            scorePanel.SetScore(scoreProcessor.Score);
+            scorePanel.SetAccuracy(scoreProcessor.Accuracy);
         }
 
         private void showJudgementPopup(Vector2 position, HitResult result)
@@ -609,23 +718,57 @@ namespace OsuClient.Game.Screens.Gameplay
                 HitResult.Great => "300",
                 HitResult.Ok => "100",
                 HitResult.Meh => "50",
-                _ => "Miss",
+                _ => "X",
             };
 
-            Color4 colour = result switch
+            showPopup(position, text, judgementColour(result));
+        }
+
+        /// <summary>
+        /// Each judgement's colour, from the palette: the same order of hues
+        /// as the key bars' timing bands, and a miss in magenta rather than a
+        /// warning red, so it reads as part of the same display.
+        /// </summary>
+        private static Color4 judgementColour(HitResult result) => result switch
+        {
+            HitResult.Great => RetroPalette.Cyan,
+            HitResult.Ok => RetroPalette.Mint,
+            HitResult.Meh => RetroPalette.Amber,
+            _ => RetroPalette.Magenta,
+        };
+
+        /// <summary>
+        /// A short neon ring off a hit circle: it opens out from the circle's
+        /// edge and fades, in the judgement's colour.
+        /// </summary>
+        private void showHitBurst(Vector2 position, Color4 colour)
+        {
+            float diameter = (float)Beatmap.Difficulty.CircleRadius * 2;
+
+            var ring = new CircularContainer
             {
-                HitResult.Great => new Color4(0.4f, 0.8f, 1f, 1f),
-                HitResult.Ok => new Color4(0.4f, 0.9f, 0.4f, 1f),
-                HitResult.Meh => new Color4(0.95f, 0.8f, 0.3f, 1f),
-                _ => new Color4(1f, 0.3f, 0.3f, 1f),
+                Anchor = Anchor.TopLeft,
+                Origin = Anchor.Centre,
+                Position = position,
+                Size = new Vector2(diameter),
+                Masking = true,
+                BorderThickness = 3,
+                BorderColour = colour,
+                Depth = float.MinValue,
+                Child = new Box { RelativeSizeAxes = Axes.Both, Alpha = 0, AlwaysPresent = true },
             };
 
-            showPopup(position, text, colour);
+            hitObjectContainer.Add(ring);
+
+            ring.ScaleTo(1.55f, 320, Easing.OutQuint);
+            ring.FadeOut(320, Easing.OutQuad);
+
+            Scheduler.AddDelayed(() => hitObjectContainer.Remove(ring, true), 340);
         }
 
         /// <summary>The gold "+100" that flies off a spinner for each full extra rotation past its requirement.</summary>
         private void showBonusPopup(Vector2 position) =>
-            showPopup(position, "+100", new Color4(1f, 0.85f, 0.3f, 1f));
+            showPopup(position, "+100", RetroPalette.Amber);
 
         private void showPopup(Vector2 position, string text, Color4 colour)
         {
@@ -653,8 +796,13 @@ namespace OsuClient.Game.Screens.Gameplay
         {
             completed = true;
 
-            stateText.Text = "Cleared!";
+            // The needle lifts off the record at the end of the side.
+            stateText.Text = "SIDE A COMPLETE";
+            stateText.Colour = RetroPalette.Mint;
             stateText.FadeIn(300, Easing.OutQuint);
+
+            if (track != null)
+                deckSounds.PlayNeedleLift();
 
             queueResults();
         }
@@ -664,10 +812,22 @@ namespace OsuClient.Game.Screens.Gameplay
             completed = true;
             failed = true;
 
-            track?.Stop();
+            // The tape winds down in pitch and speed together, like a deck
+            // losing power, and the auto-stop catches as it runs out. The
+            // gameplay clock follows the track, so the notes slow with it.
+            this.TransformBindableTo(tapeSpeed, tape_stop_floor, tape_stop_duration, Easing.InQuad);
+            Scheduler.AddDelayed(() =>
+            {
+                track?.Stop();
+                deckSounds.PlayAutoStop();
+            }, tape_stop_duration);
 
-            stateText.Text = "Failed";
-            stateText.Colour = new Color4(1f, 0.4f, 0.4f, 1f);
+            // The colour drains out of the picture as the tape runs down.
+            failShade.FadeTo(0.55f, tape_stop_duration, Easing.OutQuad);
+            playfield.FadeColour(new Color4(0.5f, 0.5f, 0.55f, 1f), tape_stop_duration, Easing.OutQuad);
+
+            stateText.Text = "TAPE STOPPED";
+            stateText.Colour = new Color4(1f, 0.3f, 0.32f, 1f);
             stateText.FadeIn(300, Easing.OutQuint);
 
             queueResults();
@@ -935,6 +1095,7 @@ namespace OsuClient.Game.Screens.Gameplay
         public override bool OnExiting(ScreenExitEvent e)
         {
             track?.Stop();
+            track?.RemoveAdjustment(AdjustableProperty.Frequency, tapeSpeed);
             this.FadeOut(200, Easing.OutQuint);
 
             return base.OnExiting(e);

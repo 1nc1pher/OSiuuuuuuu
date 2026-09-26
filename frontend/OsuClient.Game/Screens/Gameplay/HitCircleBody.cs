@@ -1,30 +1,36 @@
+using osu.Framework.Allocation;
 using osu.Framework.Graphics;
-using osu.Framework.Graphics.Colour;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Rendering;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
+using OsuClient.Game.Graphics;
 using osuTK;
 using osuTK.Graphics;
 
 namespace OsuClient.Game.Screens.Gameplay
 {
     /// <summary>
-    /// The lazer-style hit circle look, shared by <see cref="DrawableHitCircle"/>
-    /// and a slider's head: a thick white ring, a darker combo-colour disc
-    /// inside it, and a lighter combo-colour disc inside that with a
-    /// top-to-bottom gradient for a glassy highlight — rather than the flat
-    /// single-colour fill the very first version of this client used.
+    /// A hit circle drawn as a small record, shared by
+    /// <see cref="DrawableHitCircle"/> and a slider's head: a vinyl face
+    /// with grooves (<see cref="VinylTexture"/>), a label in the combo colour
+    /// carrying the number in the retro pixel font, and a ring round the edge.
+    ///
+    /// Only the ring is drawn in deep, solid colour. The vinyl and the label
+    /// are translucent, so the song's background stays visible through every
+    /// circle; the outline is what the eye aims at, and it is the one thing
+    /// here that never fades into the picture. The record doesn't turn — it
+    /// is a texture, not an animation, so nothing on the circle moves except
+    /// what tells the player about timing.
     /// </summary>
     public partial class HitCircleBody : CompositeDrawable
     {
-        /// <summary>Ring thickness as a fraction of the circle's diameter.</summary>
-        private const float ring_thickness = 0.10f;
+        /// <summary>The outline's thickness, as a fraction of the diameter.</summary>
+        private const float ring_thickness = 0.085f;
 
-        /// <summary>Where the darker outer disc's edge sits, inside the ring.</summary>
-        private const float outer_disc_scale = 1f - ring_thickness;
+        private const float label_alpha = 0.55f;
 
-        /// <summary>Where the lighter inner disc sits, inside the outer disc.</summary>
-        private const float inner_disc_scale = 0.72f;
+        private readonly Sprite vinyl;
 
         public HitCircleBody(float diameter, Color4 comboColour, int comboNumber)
         {
@@ -32,55 +38,49 @@ namespace OsuClient.Game.Screens.Gameplay
             Origin = Anchor.Centre;
             Size = new Vector2(diameter);
 
-            Color4 outer = darken(comboColour, 0.62f);
-            Color4 innerTop = lighten(comboColour, 0.55f);
-            Color4 innerBottom = lighten(comboColour, 0.15f);
-
             InternalChildren = new Drawable[]
             {
-                // Thick white ring — the full circle showing through at the
-                // edges of the smaller discs stacked on top of it.
+                vinyl = new Sprite
+                {
+                    Anchor = Anchor.Centre,
+                    Origin = Anchor.Centre,
+                    RelativeSizeAxes = Axes.Both,
+                    Size = new Vector2(1 - ring_thickness),
+                },
+                // The label, in the combo colour but see-through.
                 new Circle
                 {
+                    Anchor = Anchor.Centre,
+                    Origin = Anchor.Centre,
                     RelativeSizeAxes = Axes.Both,
+                    Size = new Vector2(VinylTexture.LabelFraction * (1 - ring_thickness) + 0.02f),
+                    Colour = new Color4(comboColour.R, comboColour.G, comboColour.B, label_alpha),
+                },
+                // The outline: the one solid, deep-coloured part.
+                new CircularContainer
+                {
+                    RelativeSizeAxes = Axes.Both,
+                    Masking = true,
+                    BorderThickness = diameter * ring_thickness,
+                    BorderColour = comboColour,
+                    Child = new Box { RelativeSizeAxes = Axes.Both, Alpha = 0, AlwaysPresent = true },
+                },
+                new RetroText
+                {
+                    Anchor = Anchor.Centre,
+                    Origin = Anchor.Centre,
+                    Font = RetroFontFamily.Display,
+                    // Rounded so a map's circles all share one size, and so
+                    // one rendered texture per number (see RetroText.Shared).
+                    TextSize = (int)(diameter * 0.26f),
                     Colour = Color4.White,
-                },
-                new Circle
-                {
-                    RelativeSizeAxes = Axes.Both,
-                    Size = new Vector2(outer_disc_scale),
-                    Anchor = Anchor.Centre,
-                    Origin = Anchor.Centre,
-                    Colour = outer,
-                },
-                new Circle
-                {
-                    RelativeSizeAxes = Axes.Both,
-                    Size = new Vector2(inner_disc_scale),
-                    Anchor = Anchor.Centre,
-                    Origin = Anchor.Centre,
-                    // The "gradient vibe": lighter at the top fading toward
-                    // the disc's own (still lighter-than-outer) base colour.
-                    Colour = ColourInfo.GradientVertical(innerTop, innerBottom),
-                },
-                new SpriteText
-                {
-                    Anchor = Anchor.Centre,
-                    Origin = Anchor.Centre,
-                    Font = FontUsage.Default.With(size: diameter * 0.4f),
                     Text = comboNumber.ToString(),
-                    Colour = Color4.White,
+                    Shared = true,
                 },
             };
         }
 
-        private static Color4 darken(Color4 colour, float amount) =>
-            new Color4(colour.R * (1 - amount), colour.G * (1 - amount), colour.B * (1 - amount), colour.A);
-
-        private static Color4 lighten(Color4 colour, float amount) => new Color4(
-            colour.R + (1 - colour.R) * amount,
-            colour.G + (1 - colour.G) * amount,
-            colour.B + (1 - colour.B) * amount,
-            colour.A);
+        [BackgroundDependencyLoader]
+        private void load(IRenderer renderer) => vinyl.Texture = VinylTexture.Get(renderer);
     }
 }

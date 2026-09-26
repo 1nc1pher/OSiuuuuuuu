@@ -83,7 +83,7 @@ namespace OsuClient.Tests.Visual
                 return;
 
             if (arrivedAt == null && stack.CurrentScreen is IRevealable arriving && arriving != menu
-                && arriving.Reveal.Revealing && arriving.Reveal.Diameter > 0)
+                && arriving.Reveal.Revealing && arriving.Reveal.Progress > 0)
             {
                 arrivedAt = stopwatch.CurrentTime;
             }

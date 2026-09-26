@@ -41,6 +41,29 @@ namespace OsuClient.Game.Screens.SongSelect
         /// <summary>Gap between wedges, in degrees, so slice edges read.</summary>
         private const float wedge_gap = 1.2f;
 
+        /// <summary>
+        /// Most slices the record is ever cut into. A library with more songs
+        /// than this shows a window of them — the selected song and its
+        /// neighbours either side — and the slices passing round the far side
+        /// of the record (off the right edge of the screen) are handed the
+        /// songs coming into view as it turns.
+        ///
+        /// Before, every song had its own slice, so slices kept narrowing as
+        /// the library grew: at a few dozen songs the selected song's card
+        /// hung over its neighbours and every other cover was a sliver. This
+        /// many keeps each slice wide enough for the card to sit inside the
+        /// selected one with room for its glow, whatever the library size.
+        /// </summary>
+        public const int MaxWedges = 16;
+
+        /// <summary>
+        /// Disc diameter the selected-song card was sized for (a 1080-line
+        /// window). The card scales with the disc from there, so it fills the
+        /// same share of its slice at any window size — sized in fixed pixels,
+        /// it would overhang the slice on a small window.
+        /// </summary>
+        private const float card_design_diameter = 1080 * 1.52f;
+
         private const float selected_scale = 1.055f;
         private const float selected_nudge = 26;
 
@@ -94,6 +117,21 @@ namespace OsuClient.Game.Screens.SongSelect
         private int selectedIndex;
         private float sweep = 360;
 
+        /// <summary>Slices on the record: every song, up to <see cref="MaxWedges"/>.</summary>
+        private int slotCount;
+
+        /// <summary>
+        /// Where the selection is on the record, counted in slices and never
+        /// wrapped, so the record keeps turning the same way past the end of
+        /// the library instead of jumping back. The selected song is this
+        /// modulo the song count, and its slice this modulo
+        /// <see cref="slotCount"/>.
+        /// </summary>
+        private int position;
+
+        /// <summary>Which <see cref="position"/> each slice is currently showing the song for.</summary>
+        private readonly List<int> slotPositions = new List<int>();
+
         private ScheduledDelegate? pendingCardUpdate;
 
         [Resolved]
@@ -102,6 +140,9 @@ namespace OsuClient.Game.Screens.SongSelect
         /// <summary>The highlighted song, or null when the wheel is empty.</summary>
         public BeatmapLibraryEntry? Selection =>
             selectedIndex >= 0 && selectedIndex < entries.Count ? entries[selectedIndex] : null;
+
+        /// <summary>The songs currently on the record's slices, in slice order.</summary>
+        public IEnumerable<BeatmapLibraryEntry> SongsOnRecord => slotPositions.Select(p => entries[songAt(p)]);
 
         /// <summary>
         /// The selected wedge's accent colour — the same one its glow border
@@ -335,7 +376,7 @@ namespace OsuClient.Game.Screens.SongSelect
 
             foreach (var (radius, sweep, angle, alpha, thickness) in arcs)
             {
-                container.Add(new CircularProgress
+                container.Add(new SectorProgress
                 {
                     Anchor = Anchor.Centre,
                     Origin = Anchor.Centre,
@@ -444,6 +485,7 @@ namespace OsuClient.Game.Screens.SongSelect
             // thumbnail stays on the record, with the title block extending
             // back towards the hub, where there is room for any length.
             selectionCard.X = -diameter * 0.42f;
+            selectionCard.Scale = new Vector2(diameter / card_design_diameter);
 
             tonearm.Size = new Vector2(diameter);
         }
@@ -468,6 +510,7 @@ namespace OsuClient.Game.Screens.SongSelect
 
             ring.Clear();
             wedges.Clear();
+            slotPositions.Clear();
 
             if (entries.Count == 0)
             {
@@ -477,29 +520,11 @@ namespace OsuClient.Game.Screens.SongSelect
                 return;
             }
 
-            // Equal slices, so the record is always a complete disc. With a
-            // fixed slice width instead, a short library would leave a wedge
-            // of empty space and stop reading as a record at all.
-            sweep = 360f / entries.Count;
-
-            for (int i = 0; i < entries.Count; i++)
-            {
-                float drawnSweep = Math.Max(sweep - wedge_gap, sweep * 0.5f);
-
-                var wedge = new VinylWedge(drawnSweep, accentFor(i), entries[i].BackgroundPath)
-                {
-                    // Half the gap sits either side, so the drawn slice is
-                    // centred in its slot. With the whole gap trailing each
-                    // wedge instead, every slice sat half a gap off the angle
-                    // rotationFor aims at — the selected one never quite lined
-                    // up with the selection point, and its outward nudge
-                    // pointed somewhere slightly different again.
-                    Angle = i * sweep + (sweep - drawnSweep) / 2,
-                };
-
-                wedges.Add(wedge);
-                ring.Add(wedge);
-            }
+            // Equal slices, so the record is always a complete disc: a short
+            // library gets fewer, wider slices rather than a gap of empty
+            // record. A long one never gets more than MaxWedges.
+            slotCount = Math.Min(entries.Count, MaxWedges);
+            sweep = 360f / slotCount;
 
             int restored;
 
@@ -511,8 +536,31 @@ namespace OsuClient.Game.Screens.SongSelect
                 restored = 0;
 
             selectedIndex = restored;
+            position = restored;
 
-            ring.Rotation = rotationFor(selectedIndex);
+            for (int i = 0; i < slotCount; i++)
+            {
+                float drawnSweep = Math.Max(sweep - wedge_gap, sweep * 0.5f);
+                int shown = positionInSlot(i);
+                int song = songAt(shown);
+
+                var wedge = new VinylWedge(drawnSweep, accentFor(song), entries[song].BackgroundPath)
+                {
+                    // Half the gap sits either side, so the drawn slice is
+                    // centred in its slot. With the whole gap trailing each
+                    // wedge instead, every slice sat half a gap off the angle
+                    // rotationFor aims at — the selected one never quite lined
+                    // up with the selection point, and its outward nudge
+                    // pointed somewhere slightly different again.
+                    Angle = i * sweep + (sweep - drawnSweep) / 2,
+                };
+
+                wedges.Add(wedge);
+                slotPositions.Add(shown);
+                ring.Add(wedge);
+            }
+
+            ring.Rotation = rotationFor(position);
             applySelectionVisuals(0);
             notifySelection();
         }
@@ -532,8 +580,48 @@ namespace OsuClient.Game.Screens.SongSelect
         private static Color4 accentFor(int index) =>
             RetroPalette.DifficultyRamp[index % RetroPalette.DifficultyRamp.Length];
 
-        /// <summary>Ring rotation that puts wedge <paramref name="index"/> under the selection point.</summary>
-        private float rotationFor(int index) => selection_angle - (index * sweep + sweep / 2);
+        /// <summary>
+        /// Ring rotation that puts the slice at record position
+        /// <paramref name="at"/> under the selection point. Positions a whole
+        /// number of slice-sets apart land on the same slice, a full turn
+        /// apart, which is what lets the record keep turning one way.
+        /// </summary>
+        private float rotationFor(int at) => selection_angle - (at * sweep + sweep / 2);
+
+        private static int wrap(int value, int count) => (value % count + count) % count;
+
+        /// <summary>The song shown at record position <paramref name="at"/>.</summary>
+        private int songAt(int at) => wrap(at, entries.Count);
+
+        /// <summary>
+        /// The record position slice <paramref name="slot"/> should show: of
+        /// all the positions that land on that slice, the one within half a
+        /// record of the selection. A slice so changes song on the far side
+        /// of the record, opposite the selection — off the right edge of the
+        /// screen.
+        /// </summary>
+        private int positionInSlot(int slot)
+        {
+            int first = position - slotCount / 2;
+            return first + wrap(slot - first, slotCount);
+        }
+
+        /// <summary>Hands each slice the song for the position it now covers, after the selection moves.</summary>
+        private void assignSlots()
+        {
+            for (int i = 0; i < slotCount; i++)
+            {
+                int shown = positionInSlot(i);
+
+                if (slotPositions[i] == shown)
+                    continue;
+
+                slotPositions[i] = shown;
+
+                int song = songAt(shown);
+                wedges[i].SetSong(entries[song].BackgroundPath, accentFor(song));
+            }
+        }
 
         /// <summary>Moves the highlight by <paramref name="delta"/> slices, wrapping.</summary>
         public void SelectRelative(int delta)
@@ -558,13 +646,18 @@ namespace OsuClient.Game.Screens.SongSelect
 
             // The short way round, as the ring itself turns: stepping off the
             // last song onto the first is a step forward, not a lap back.
-            int step = ((index - selectedIndex) % entries.Count + entries.Count) % entries.Count;
+            int step = wrap(index - selectedIndex, entries.Count);
             bool forward = step <= entries.Count / 2;
 
+            if (!forward)
+                step -= entries.Count;
+
             selectedIndex = index;
+            position += step;
+            assignSlots();
             Turned?.Invoke(forward);
 
-            animateRingTo(rotationFor(index));
+            animateRingTo(rotationFor(position));
             applySelectionVisuals(snap_duration);
             notifySelection();
         }
@@ -587,9 +680,11 @@ namespace OsuClient.Game.Screens.SongSelect
         {
             float lift = liftStrength();
 
+            int selectedSlot = wrap(position, slotCount);
+
             for (int i = 0; i < wedges.Count; i++)
             {
-                bool isSelected = i == selectedIndex;
+                bool isSelected = i == selectedSlot;
 
                 wedges[i].SetTint(isSelected ? 0.10f : 0.52f, isSelected ? 0f : 0.34f, duration);
                 wedges[i].SetElevation(isSelected ? 1 + (selected_scale - 1) * lift : 1f,
@@ -611,7 +706,7 @@ namespace OsuClient.Game.Screens.SongSelect
         /// positioned against that rim. Hence: full lift once there are
         /// enough songs for a slice to be a slice, easing off to none at one.
         /// </summary>
-        private float liftStrength() => Math.Clamp((entries.Count - 1) / 4f, 0, 1);
+        private float liftStrength() => Math.Clamp((slotCount - 1) / 4f, 0, 1);
 
         private void updateSelectionCard(double duration)
         {
@@ -646,8 +741,29 @@ namespace OsuClient.Game.Screens.SongSelect
             // Same resolution the wedges ask for, so the card is a cache hit
             // on art that is already decoded. Textures are owned by the cache
             // and shared — the one being replaced must not be disposed.
-            selectionArt.Texture = CoverArt.Load(renderer, entry.BackgroundPath, VinylWedge.ArtResolution);
-            selectionArt.Alpha = selectionArt.Texture == null ? 0 : 1;
+            if (CoverArt.TryGetCached(entry.BackgroundPath, VinylWedge.ArtResolution, out var art))
+            {
+                selectionArt.Texture = art;
+                selectionArt.Alpha = art == null ? 0 : 1;
+            }
+            else
+            {
+                // Not decoded yet (the wheel opened before the background
+                // warm-up reached it): decoded off the update thread, so
+                // turning to it never stalls a frame, and shown if the wheel
+                // is still on this song when it arrives.
+                selectionArt.Alpha = 0;
+
+                CoverArt.LoadAsync(renderer, entry.BackgroundPath, VinylWedge.ArtResolution)
+                        .ContinueWith(t => Schedule(() =>
+                        {
+                            if (Selection != entry || t.Result == null)
+                                return;
+
+                            selectionArt.Texture = t.Result;
+                            selectionArt.FadeIn(200, Easing.OutQuint);
+                        }), System.Threading.Tasks.TaskContinuationOptions.OnlyOnRanToCompletion);
+            }
 
             selectionArtFrame.BorderColour = accent;
             selectionArtFrame.EdgeEffect = new EdgeEffectParameters
@@ -744,9 +860,9 @@ namespace OsuClient.Game.Screens.SongSelect
 
             float baseAngle = ((screenAngle - ring.Rotation) % 360 + 360) % 360;
 
-            int index = (int)(baseAngle / sweep);
+            int slot = Math.Clamp((int)(baseAngle / sweep), 0, slotCount - 1);
 
-            return Math.Clamp(index, 0, entries.Count - 1);
+            return songAt(slotPositions[slot]);
         }
     }
 }

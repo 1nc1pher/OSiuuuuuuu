@@ -135,6 +135,7 @@ namespace OsuClient.Game.Screens.MainMenu
 
         private MenuTrack menuTrack = null!;
         private MenuBackground background = null!;
+        private RevealClip revealClip = null!;
         private Container logoArea = null!;
         private Container logoEntry = null!;
         private MenuLogo logo = null!;
@@ -155,7 +156,14 @@ namespace OsuClient.Game.Screens.MainMenu
         /// colour spread, on the same curve, so a screen change feels like
         /// the menu opening.
         /// </summary>
-        private const double reveal_duration = 1150;
+        private const double reveal_duration = 1000;
+
+        /// <summary>
+        /// The wipe's curve. Quick off the mark so the press feels answered,
+        /// but not the long crawl OutQuint gives, which left the tracking band
+        /// idling at the far edge for most of a second.
+        /// </summary>
+        private const Easing reveal_easing = Easing.OutCubic;
 
         /// <summary>
         /// How long, once suspended, the menu stays drawn: the whole sweep,
@@ -168,11 +176,18 @@ namespace OsuClient.Game.Screens.MainMenu
         private bool leavingThroughRipple;
 
         /// <summary>
-        /// Frames the arriving screen draws before its slide starts: the
-        /// first is where it does its heavy setup, so the slide begins on the
-        /// one after.
+        /// How long the arriving screen is on the stack, drawn but invisible
+        /// behind its collapsed <see cref="ScreenReveal"/>, before the wipe
+        /// starts. Its first frames are the heavy ones — texture uploads, the
+        /// blurred background's first render — and this lets the draw thread
+        /// get through them while the menu still looks untouched, instead of
+        /// in the wipe's first frames.
+        ///
+        /// Measured in time, not frames: the update thread runs far faster
+        /// than the screen draws, so a count of its frames passed in a few
+        /// milliseconds, before the draw thread had drawn the new screen once.
         /// </summary>
-        private const int settle_frames = 2;
+        private const double settle_time = 150;
 
         /// <summary>
         /// How far the screen has turned from monochrome to colour, 0 to 1.
@@ -214,87 +229,93 @@ namespace OsuClient.Game.Screens.MainMenu
 
             menuTrack = sharedMusic ?? new MenuTrack(songsDirectory);
 
-            InternalChildren = new Drawable[]
+            // One clip around everything the menu draws: while the next screen
+            // sweeps in over it, only the part still outside the curve is
+            // drawn (see RevealClip).
+            InternalChild = revealClip = new RevealClip
             {
-                background = new MenuBackground(),
-                // Between the background and the logo: the strip has to be
-                // covered by the circle it grows out from, and an equal-depth
-                // child added earlier draws underneath. (Pushing it back with
-                // Depth instead puts it behind the background, where it is
-                // invisible — which is exactly what happened first.)
-                strip = new MenuStrip(pushUpload, pushSongSelect),
-                logoArea = new Container
+                Children = new Drawable[]
                 {
-                    Anchor = Anchor.Centre,
-                    Origin = Anchor.Centre,
-                    // A second container purely so the entry animation and
-                    // the open/close transition have a Scale each. Sharing
-                    // one meant whichever ran second won: entering the screen
-                    // already open left the logo at full size, because
-                    // OnEntering's scale-up landed after Expand()'s
-                    // scale-down and simply replaced it.
-                    Child = logoEntry = new Container
+                    background = new MenuBackground(),
+                    // Between the background and the logo: the strip has to be
+                    // covered by the circle it grows out from, and an equal-depth
+                    // child added earlier draws underneath. (Pushing it back with
+                    // Depth instead puts it behind the background, where it is
+                    // invisible — which is exactly what happened first.)
+                    strip = new MenuStrip(pushUpload, pushSongSelect),
+                    logoArea = new Container
                     {
-                        RelativeSizeAxes = Axes.Both,
                         Anchor = Anchor.Centre,
                         Origin = Anchor.Centre,
-                        Children = new Drawable[]
+                        // A second container purely so the entry animation and
+                        // the open/close transition have a Scale each. Sharing
+                        // one meant whichever ran second won: entering the screen
+                        // already open left the logo at full size, because
+                        // OnEntering's scale-up landed after Expand()'s
+                        // scale-down and simply replaced it.
+                        Child = logoEntry = new Container
                         {
-                            spectrum = new SpectrumRing
+                            RelativeSizeAxes = Axes.Both,
+                            Anchor = Anchor.Centre,
+                            Origin = Anchor.Centre,
+                            Children = new Drawable[]
                             {
-                                Anchor = Anchor.Centre,
-                                Origin = Anchor.Centre,
-                                RelativeSizeAxes = Axes.Both,
-                            },
-                            logo = new MenuLogo
-                            {
-                                Anchor = Anchor.Centre,
-                                Origin = Anchor.Centre,
-                                RelativeSizeAxes = Axes.Both,
-                                Size = new Vector2(logo_fraction),
-                                Clicked = toggleExpanded,
+                                spectrum = new SpectrumRing
+                                {
+                                    Anchor = Anchor.Centre,
+                                    Origin = Anchor.Centre,
+                                    RelativeSizeAxes = Axes.Both,
+                                },
+                                logo = new MenuLogo
+                                {
+                                    Anchor = Anchor.Centre,
+                                    Origin = Anchor.Centre,
+                                    RelativeSizeAxes = Axes.Both,
+                                    Size = new Vector2(logo_fraction),
+                                    Clicked = toggleExpanded,
+                                },
                             },
                         },
                     },
-                },
-                // The same edge wash gameplay pulses on the beat, so the two
-                // screens feel like the same game breathing.
-                borderFlash = new EdgeGlow(0),
-                nowPlaying = new NowPlayingDisplay
-                {
-                    Anchor = Anchor.TopRight,
-                    Origin = Anchor.TopRight,
-                    Margin = new MarginPadding(margin),
-                },
-                // Two prepared lines swapped by alpha rather than one whose
-                // text changes: RetroText rasterizes a new texture on every
-                // assignment, and this changes on every click.
-                new Container
-                {
-                    Anchor = Anchor.BottomCentre,
-                    Origin = Anchor.BottomCentre,
-                    AutoSizeAxes = Axes.Both,
-                    Margin = new MarginPadding(margin),
-                    Children = new Drawable[]
+                    // The same edge wash gameplay pulses on the beat, so the two
+                    // screens feel like the same game breathing.
+                    borderFlash = new EdgeGlow(0),
+                    nowPlaying = new NowPlayingDisplay
                     {
-                        closedHint = new RetroText
+                        Anchor = Anchor.TopRight,
+                        Origin = Anchor.TopRight,
+                        Margin = new MarginPadding(margin),
+                    },
+                    // Two prepared lines swapped by alpha rather than one whose
+                    // text changes: RetroText rasterizes a new texture on every
+                    // assignment, and this changes on every click.
+                    new Container
+                    {
+                        Anchor = Anchor.BottomCentre,
+                        Origin = Anchor.BottomCentre,
+                        AutoSizeAxes = Axes.Both,
+                        Margin = new MarginPadding(margin),
+                        Children = new Drawable[]
                         {
-                            Anchor = Anchor.Centre,
-                            Origin = Anchor.Centre,
-                            Font = RetroFontFamily.Display,
-                            TextSize = 9,
-                            Text = "CLICK THE RECORD   ·   ESC TO QUIT",
-                            Colour = RetroPalette.TextDim,
-                        },
-                        openHint = new RetroText
-                        {
-                            Anchor = Anchor.Centre,
-                            Origin = Anchor.Centre,
-                            Font = RetroFontFamily.Display,
-                            TextSize = 9,
-                            Text = "ENTER TO PLAY   ·   ESC TO GO BACK",
-                            Colour = RetroPalette.TextDim,
-                            Alpha = 0,
+                            closedHint = new RetroText
+                            {
+                                Anchor = Anchor.Centre,
+                                Origin = Anchor.Centre,
+                                Font = RetroFontFamily.Display,
+                                TextSize = 9,
+                                Text = "CLICK THE RECORD   ·   ESC TO QUIT",
+                                Colour = RetroPalette.TextDim,
+                            },
+                            openHint = new RetroText
+                            {
+                                Anchor = Anchor.Centre,
+                                Origin = Anchor.Centre,
+                                Font = RetroFontFamily.Display,
+                                TextSize = 9,
+                                Text = "ENTER TO PLAY   ·   ESC TO GO BACK",
+                                Colour = RetroPalette.TextDim,
+                                Alpha = 0,
+                            },
                         },
                     },
                 },
@@ -518,7 +539,7 @@ namespace OsuClient.Game.Screens.MainMenu
 
             // PLAY sits on the right of the strip and the songs are that way:
             // the ripple comes in from the right.
-            leaveThrough(RippleEdge.Right, () => new RetroSongSelectScreen(songsDirectory, current));
+            leaveThrough(RippleEdge.Right, VcrCue.Play, () => new RetroSongSelectScreen(songsDirectory, current));
         }
 
         private void pushUpload()
@@ -531,23 +552,23 @@ namespace OsuClient.Game.Screens.MainMenu
             string? audioPath = menuTrack.Entry?.Set?.AudioPath;
             double time = menuTrack.CurrentTime;
 
-            leaveThrough(RippleEdge.Left, () => new UploadScreen(songsDirectory, audioPath, time));
+            leaveThrough(RippleEdge.Left, VcrCue.Record, () => new UploadScreen(songsDirectory, audioPath, time));
         }
 
         /// <summary>
-        /// Leaves for another screen through a single curve from
-        /// <paramref name="edge"/>: the next screen grows out of that edge
-        /// inside a circle, over the menu, until it covers the window — with
-        /// one glowing ring on the curve and the transition whoosh travelling
-        /// the same way.
+        /// Leaves for another screen through a VCR tracking wipe from
+        /// <paramref name="edge"/>: the next screen is uncovered behind a
+        /// straight edge sweeping in from that side, the edge dressed as a
+        /// band of tape static, while the menu fades ahead of it — with the
+        /// deck's <paramref name="cue"/> label in the arriving corner and the
+        /// transition whoosh travelling the same way.
         ///
-        /// The menu stays exactly as it is outside the curve; nothing fades.
         /// The next screen loads from the press, because song select reads
         /// the whole library before it can show and that is time nobody
         /// should wait on — and the sweep only starts once it has drawn its
-        /// first, heavy frame, so the curve never stalls partway across.
+        /// first, heavy frame, so the edge never stalls partway across.
         /// </summary>
-        private void leaveThrough(RippleEdge edge, Func<Screen> next)
+        private void leaveThrough(RippleEdge edge, VcrCue cue, Func<Screen> next)
         {
             if (ripple == null)
             {
@@ -564,10 +585,10 @@ namespace OsuClient.Game.Screens.MainMenu
 
             var screen = next();
 
-            LoadComponentAsync(screen, _ => arrive(screen, edge));
+            LoadComponentAsync(screen, _ => arrive(screen, edge, cue));
         }
 
-        private void arrive(Screen screen, RippleEdge edge)
+        private void arrive(Screen screen, RippleEdge edge, VcrCue cue)
         {
             if (!this.IsCurrentScreen() || ripple == null)
             {
@@ -581,6 +602,10 @@ namespace OsuClient.Game.Screens.MainMenu
             // the edge the ring will come from.
             reveal?.Collapse(ripple.RingOrigin);
 
+            // From here the menu only draws what the circle has yet to cover.
+            if (reveal != null)
+                revealClip.Follow(reveal);
+
             this.Push(screen);
 
             // Held shut until it has drawn a couple of ordinary frames. Song
@@ -588,6 +613,7 @@ namespace OsuClient.Game.Screens.MainMenu
             // preview track); a sweep started at the push had mostly run by
             // the time that frame ended, and the screen simply appeared.
             int frames = 0;
+            double firstFrameAt = 0;
 
             void beginWhenSettled(Drawable arriving)
             {
@@ -595,6 +621,8 @@ namespace OsuClient.Game.Screens.MainMenu
 
                 if (frames == 1)
                 {
+                    firstFrameAt = arriving.Time.Current;
+
                     // Here rather than straight after the push: the screen's
                     // own OnEntering fade starts a moment later, and the curve
                     // is the whole entrance — the picture inside it is whole.
@@ -603,15 +631,15 @@ namespace OsuClient.Game.Screens.MainMenu
                     return;
                 }
 
-                if (frames < settle_frames)
+                if (arriving.Time.Current - firstFrameAt < settle_time)
                     return;
 
                 arriving.OnUpdate -= beginWhenSettled;
 
                 if (reveal != null)
-                    reveal.Sweep(reveal_duration, Easing.OutQuint);
+                    reveal.Sweep(reveal_duration, reveal_easing);
 
-                ripple.Sweep(reveal_duration, Easing.OutQuint);
+                ripple.Sweep(reveal_duration, reveal_easing, cue);
                 sounds.PlayTransition(fromRight: edge == RippleEdge.Right);
 
                 ripple.End();
@@ -694,6 +722,7 @@ namespace OsuClient.Game.Screens.MainMenu
 
             this.FadeIn(250, Easing.OutQuint);
             leavingThroughRipple = false;
+            revealClip.Release();
 
 
             // Coming back should look like arriving at the menu, not like

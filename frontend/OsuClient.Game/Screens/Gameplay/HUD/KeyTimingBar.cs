@@ -4,6 +4,8 @@ using osu.Framework.Graphics.Colour;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Effects;
 using osu.Framework.Graphics.Shapes;
+using OsuClient.Game.Graphics;
+using OsuClient.Game.Graphics.Rack;
 using osuTK;
 using osuTK.Graphics;
 
@@ -51,7 +53,10 @@ namespace OsuClient.Game.Screens.Gameplay.HUD
 
         private readonly Container bar;
         private readonly Container ticks;
-        private readonly Container pressGlow;
+        private readonly IndicatorLamp lamp;
+
+        /// <summary>Size of the chrome caps closing each end of the bar, as on a channel meter.</summary>
+        private static readonly Vector2 cap_size = new Vector2(bar_width + 8, 5);
 
         /// <param name="overallDifficulty">Sets where the colour bands fall — they are this map's hit windows.</param>
         public KeyTimingBar(double overallDifficulty)
@@ -65,22 +70,17 @@ namespace OsuClient.Game.Screens.Gameplay.HUD
 
             InternalChildren = new Drawable[]
             {
-                // A masked pill whose own fill is transparent: all that shows
-                // is its edge effect, so the held key reads as a halo around
-                // the bar rather than a rectangle behind it.
-                pressGlow = new Container
+                // Chrome caps closing the ends, and a lamp below that lights
+                // while the key is held: a channel meter on a deck, rather
+                // than a bare bar.
+                cap(Anchor.TopCentre, Anchor.BottomCentre),
+                cap(Anchor.BottomCentre, Anchor.TopCentre),
+                lamp = new IndicatorLamp
                 {
-                    RelativeSizeAxes = Axes.Both,
-                    Masking = true,
-                    CornerRadius = bar_width / 2,
-                    EdgeEffect = new EdgeEffectParameters
-                    {
-                        Type = EdgeEffectType.Glow,
-                        Colour = new Color4(1f, 1f, 1f, 0.9f),
-                        Radius = 12,
-                    },
-                    Alpha = 0,
-                    Child = new Box { RelativeSizeAxes = Axes.Both, Alpha = 0, AlwaysPresent = true },
+                    Anchor = Anchor.BottomCentre,
+                    Origin = Anchor.TopCentre,
+                    Y = cap_size.Y + 8,
+                    LampColour = RetroPalette.Cyan,
                 },
                 bar = new Container
                 {
@@ -123,6 +123,22 @@ namespace OsuClient.Game.Screens.Gameplay.HUD
         /// every seam still shares a colour with its neighbour, so the whole
         /// thing stays one continuous fade rather than three stacked blocks.
         /// </summary>
+        private static Drawable cap(Anchor anchor, Anchor origin) => new Container
+        {
+            Anchor = anchor,
+            Origin = origin,
+            Size = cap_size,
+            Masking = true,
+            CornerRadius = 1.5f,
+            BorderThickness = 1,
+            BorderColour = RetroPalette.ChromeDark,
+            Child = new Box
+            {
+                RelativeSizeAxes = Axes.Both,
+                Colour = ColourInfo.GradientVertical(RetroPalette.Chrome, RetroPalette.ChromeDark),
+            },
+        };
+
         private static Drawable gradientHalf(bool early, double greatFraction, double okFraction)
         {
             double greatFadeFrom = greatFraction / 2;
@@ -166,13 +182,13 @@ namespace OsuClient.Game.Screens.Gameplay.HUD
         /// <summary>Lights the panel up while the key is held.</summary>
         public void Press()
         {
-            pressGlow.FadeTo(0.75f, 40, Easing.OutQuint);
+            lamp.State = LampState.Lit;
             bar.ScaleTo(new Vector2(1.35f, 1f), 40, Easing.OutQuint);
         }
 
         public void Release()
         {
-            pressGlow.FadeOut(220, Easing.OutQuint);
+            lamp.State = LampState.Off;
             bar.ScaleTo(Vector2.One, 220, Easing.OutQuint);
         }
 

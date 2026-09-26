@@ -3,6 +3,7 @@ using System.Linq;
 using NUnit.Framework;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Testing;
 using OsuClient.Game.Beatmaps;
 using OsuClient.Game.Screens.SongSelect;
 using OsuClient.Tests.Beatmaps;
@@ -254,6 +255,58 @@ namespace OsuClient.Tests.Visual
 
             AddAssert("confirmed the selected one",
                 () => lastConfirmed?.DisplayName == "B - two");
+        }
+
+        private static BeatmapLibraryEntry[] Library(int count) =>
+            Enumerable.Range(0, count).Select(i => Entry($"Artist - song {i:D2}", "Easy")).ToArray();
+
+        [Test]
+        public void ALongLibraryIsCutIntoAtMostMaxWedges()
+        {
+            CreateCarousel(Library(40));
+
+            AddAssert("capped", () => carousel.ChildrenOfType<VinylWedge>().Count() == VinylCarousel.MaxWedges);
+            AddAssert("every slice a different song", () => carousel.SongsOnRecord.Distinct().Count() == VinylCarousel.MaxWedges);
+            AddAssert("selection is on the record", () => carousel.SongsOnRecord.Contains(carousel.Selection));
+        }
+
+        [Test]
+        public void AShortLibraryGetsOneSliceASong()
+        {
+            CreateCarousel(Library(5));
+
+            AddAssert("one slice each", () => carousel.ChildrenOfType<VinylWedge>().Count() == 5);
+        }
+
+        /// <summary>
+        /// More songs than slices: slices are handed on as the record turns,
+        /// so a whole lap has to visit every song in order, with the songs
+        /// either side of the selection always on the record around it.
+        /// </summary>
+        [Test]
+        public void TurningPastTheSlicesVisitsEverySongInOrder()
+        {
+            var all = Library(40);
+            CreateCarousel(all);
+
+            for (int step = 1; step <= all.Length + 3; step++)
+            {
+                int expected = step % all.Length;
+
+                AddStep($"forward to {expected}", () => carousel.SelectRelative(1));
+                AddAssert($"on song {expected}", () => carousel.Selection == all[expected]);
+                AddAssert("neighbours on the record", () =>
+                {
+                    var onRecord = carousel.SongsOnRecord.ToHashSet();
+
+                    return Enumerable.Range(-VinylCarousel.MaxWedges / 2 + 1, VinylCarousel.MaxWedges - 1)
+                                     .All(offset => onRecord.Contains(all[((expected + offset) % all.Length + all.Length) % all.Length]));
+                });
+            }
+
+            AddStep("back across the start", () => carousel.SelectIndex(0));
+            AddStep("one more back", () => carousel.SelectRelative(-1));
+            AddAssert("on the last song", () => carousel.Selection == all[^1]);
         }
 
         [Test]

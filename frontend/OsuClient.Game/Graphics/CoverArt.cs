@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using osu.Framework.Graphics.Rendering;
 using osu.Framework.Graphics.Textures;
 using SixLabors.ImageSharp;
@@ -39,6 +41,55 @@ namespace OsuClient.Game.Graphics
         private static readonly Dictionary<string, Texture> cache = new Dictionary<string, Texture>();
 
         private static readonly object cache_lock = new object();
+
+        /// <summary>
+        /// Background decodes allowed at once. Enough to fill a wheel quickly,
+        /// few enough to leave cores for the audio, update and draw threads
+        /// that a screen opening at the same time needs.
+        /// </summary>
+        private static readonly SemaphoreSlim decode_slots = new SemaphoreSlim(2);
+
+        /// <summary>
+        /// Whether the answer for <paramref name="path"/> is known without
+        /// decoding anything: the texture is cached, or there is no image to
+        /// load at all (<paramref name="texture"/> is null then). False means
+        /// only a decode will tell — see <see cref="LoadAsync"/>.
+        /// </summary>
+        public static bool TryGetCached(string? path, int resolution, out Texture? texture)
+        {
+            texture = null;
+
+            if (path == null || !File.Exists(path))
+                return true;
+
+            lock (cache_lock)
+                return cache.TryGetValue($"{resolution}|{path}", out texture);
+        }
+
+        /// <summary>
+        /// <see cref="Load"/> on a background thread, for callers that can
+        /// show something else until the art arrives rather than wait for it.
+        /// Completes on that thread; schedule back before touching drawables.
+        /// </summary>
+        public static Task<Texture?> LoadAsync(IRenderer renderer, string? path, int resolution)
+        {
+            if (TryGetCached(path, resolution, out var known))
+                return Task.FromResult(known);
+
+            return Task.Run(async () =>
+            {
+                await decode_slots.WaitAsync().ConfigureAwait(false);
+
+                try
+                {
+                    return Load(renderer, path, resolution);
+                }
+                finally
+                {
+                    decode_slots.Release();
+                }
+            });
+        }
 
         /// <summary>
         /// The texture for <paramref name="path"/>, resized to a square of

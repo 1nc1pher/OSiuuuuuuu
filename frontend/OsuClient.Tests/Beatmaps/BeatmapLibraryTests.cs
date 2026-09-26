@@ -160,6 +160,68 @@ namespace OsuClient.Tests.Beatmaps
         }
 
         // ------------------------------------------------------------------
+        // Reuse between reads
+        // ------------------------------------------------------------------
+
+        [Test]
+        public void AnUnchangedSetIsNotDecodedAgain()
+        {
+            WriteOsz("Packaged", "Easy");
+            string folder = Path.Combine(songs, "Unpacked");
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "map.osu"), TestBeatmapFixtures.BackendGenerated);
+
+            var first = BeatmapLibrary.Load(songs);
+            var second = BeatmapLibrary.Load(songs);
+
+            Assert.That(second, Has.Count.EqualTo(2));
+            Assert.That(second.Zip(first).All(pair => ReferenceEquals(pair.First, pair.Second)), Is.True);
+        }
+
+        [Test]
+        public void AnEditedSetIsDecodedAgain()
+        {
+            string folder = Path.Combine(songs, "Unpacked");
+            Directory.CreateDirectory(folder);
+            string map = Path.Combine(folder, "map.osu");
+            File.WriteAllText(map, TestBeatmapFixtures.BackendGenerated);
+
+            var before = BeatmapLibrary.Load(songs).Single();
+
+            File.WriteAllText(map, TestBeatmapFixtures.BackendGenerated.Replace("Version:Hard", "Version:Edited"));
+
+            var after = BeatmapLibrary.Load(songs).Single();
+
+            Assert.That(after, Is.Not.SameAs(before));
+            Assert.That(after.Difficulties.Single().Metadata.Version, Is.EqualTo("Edited"));
+        }
+
+        [Test]
+        public void ADifficultyAddedToASetIsPickedUp()
+        {
+            string folder = Path.Combine(songs, "Unpacked");
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "a.osu"), TestBeatmapFixtures.BackendGenerated);
+
+            Assert.That(BeatmapLibrary.Load(songs).Single().Difficulties, Has.Count.EqualTo(1));
+
+            File.WriteAllText(Path.Combine(folder, "b.osu"),
+                TestBeatmapFixtures.BackendGenerated.Replace("Version:Hard", "Version:Insane"));
+
+            Assert.That(BeatmapLibrary.Load(songs).Single().Difficulties, Has.Count.EqualTo(2));
+        }
+
+        [Test]
+        public void ANewSetIsPickedUp()
+        {
+            WriteOsz("First", "Easy");
+            Assert.That(BeatmapLibrary.Load(songs), Has.Count.EqualTo(1));
+
+            WriteOsz("Second", "Easy");
+            Assert.That(BeatmapLibrary.Load(songs), Has.Count.EqualTo(2));
+        }
+
+        // ------------------------------------------------------------------
         // Invalid input
         // ------------------------------------------------------------------
 

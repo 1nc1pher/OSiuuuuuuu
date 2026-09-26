@@ -6,9 +6,10 @@ using osuTK.Graphics;
 namespace OsuClient.Tests.Visual
 {
     /// <summary>
-    /// The combo counter's two animations: the classic beatmania pop (jump
-    /// up in size, then ease smoothly back down — no bounce) on every
-    /// increment, and a red flash on a combo break.
+    /// The combo counter's two animations: its digit wheels rolling up to the
+    /// new combo on every hit (carrying into the next wheel past 9, as a
+    /// mechanical tape counter does), and on a combo break spinning back to
+    /// zero with a red flash.
     ///
     /// Driven by a parked <see cref="ManualClock"/> rather than real time:
     /// headless test frames can jump hundreds of milliseconds in a single
@@ -34,37 +35,52 @@ namespace OsuClient.Tests.Visual
         private void advanceTo(double time) => AddStep($"clock to {time}ms", () => manualClock.CurrentTime = time);
 
         [Test]
-        public void TestIncrementPopsThenSettlesSmoothly()
+        public void TestIncrementRollsTheWheels()
         {
             createCounter();
 
             advanceTo(0);
             AddStep("combo to 1", () => counter.SetCombo(1));
-            AddAssert("pops up larger immediately", () => counter.CurrentScale > 1.4f);
+            AddAssert("still rolling at the start", () => counter.Reading == "0000");
 
-            advanceTo(200);
-            AddAssert("still settling partway through", () => counter.CurrentScale is > 1f and < 1.6f);
+            advanceTo(300);
+            AddAssert("reads 0001 once rolled", () => counter.Reading == "0001");
 
-            advanceTo(401);
-            AddAssert("fully settled at normal size", () => counter.CurrentScale == 1f);
+            AddStep("combo to 12", () => counter.SetCombo(12));
+            advanceTo(600);
+            AddAssert("reads 0012", () => counter.Reading == "0012");
         }
 
         [Test]
-        public void TestSettleNeverOvershootsPastNormalSize()
+        public void TestNineCarriesIntoTheNextWheel()
         {
             createCounter();
 
             advanceTo(0);
-            AddStep("combo to 1", () => counter.SetCombo(1));
+            AddStep("combo to 9", () => counter.SetCombo(9));
+            advanceTo(300);
+            AddAssert("reads 0009", () => counter.Reading == "0009");
 
-            // OutQuint decays monotonically from 1.6 down to 1 — unlike an
-            // elastic ease, it should never dip below 1 on the way there.
-            for (double t = 0; t <= 400; t += 40)
-            {
-                double time = t;
-                advanceTo(time);
-                AddAssert($"scale >= 1 at {time}ms", () => counter.CurrentScale >= 1f);
-            }
+            // The ones wheel rolls on through 9 to 0 while the tens wheel
+            // steps up, as a mechanical counter carries.
+            AddStep("combo to 10", () => counter.SetCombo(10));
+            advanceTo(700);
+            AddAssert("reads 0010", () => counter.Reading == "0010");
+        }
+
+        [Test]
+        public void TestComboBreakSpinsBackToZero()
+        {
+            createCounter();
+
+            advanceTo(0);
+            AddStep("build up a combo", () => counter.SetCombo(123));
+            advanceTo(400);
+            AddAssert("reads 0123", () => counter.Reading == "0123");
+
+            AddStep("break the combo", () => counter.SetCombo(0));
+            advanceTo(800);
+            AddAssert("back to 0000", () => counter.Reading == "0000");
         }
 
         [Test]

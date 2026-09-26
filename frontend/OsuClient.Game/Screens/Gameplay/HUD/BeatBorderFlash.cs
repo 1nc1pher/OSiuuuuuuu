@@ -53,7 +53,11 @@ namespace OsuClient.Game.Screens.Gameplay.HUD
         /// where the key overlay's own bars sit, so the flash slightly
         /// overlaps them rather than stopping short.
         /// </param>
-        public BeatBorderFlash(Beatmap beatmap, BeatmapDifficulty difficulty, float reach)
+        /// <param name="colour">
+        /// The light's colour: gameplay passes the difficulty's own cassette
+        /// colour. Null keeps the neutral pale blue.
+        /// </param>
+        public BeatBorderFlash(Beatmap beatmap, BeatmapDifficulty difficulty, float reach, Color4? colour = null)
         {
             this.beatmap = beatmap;
 
@@ -65,7 +69,7 @@ namespace OsuClient.Game.Screens.Gameplay.HUD
 
             RelativeSizeAxes = Axes.Both;
 
-            InternalChild = glow = new EdgeGlow(reach) { GlowColour = flash_colour };
+            InternalChild = glow = new EdgeGlow(reach) { GlowColour = colour ?? flash_colour };
         }
 
         /// <summary>Current brightness of both sides, 0 to <see cref="peakAlpha"/>. Exposed for tests.</summary>

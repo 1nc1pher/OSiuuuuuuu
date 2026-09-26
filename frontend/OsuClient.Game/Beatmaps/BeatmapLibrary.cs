@@ -181,7 +181,7 @@ namespace OsuClient.Game.Beatmaps
             foreach (string oszPath in Directory.EnumerateFiles(directory, "*.osz", SearchOption.TopDirectoryOnly))
             {
                 packagedNames.Add(System.IO.Path.GetFileNameWithoutExtension(oszPath));
-                entries.Add(loadEntry(oszPath, () => OszImporter.ReadSet(oszPath)));
+                entries.Add(loadCached(oszPath, stamp(oszPath), () => OszImporter.ReadSet(oszPath)));
             }
 
             foreach (string folder in Directory.EnumerateDirectories(directory))
@@ -191,16 +191,18 @@ namespace OsuClient.Game.Beatmaps
                 if (packagedNames.Contains(name))
                     continue;
 
+                var files = Directory.GetFiles(folder, "*", SearchOption.AllDirectories);
+
                 // Only treat a folder as a beatmap if it actually holds a .osu,
                 // so unrelated subdirectories don't turn into error panels.
-                bool hasBeatmap = Directory
-                                  .EnumerateFiles(folder, "*.osu", SearchOption.AllDirectories)
-                                  .Any();
+                bool hasBeatmap = files.Any(f => f.EndsWith(".osu", StringComparison.OrdinalIgnoreCase));
 
                 if (!hasBeatmap)
                     continue;
 
-                entries.Add(loadEntry(folder, () => OszImporter.LoadFromDirectory(folder)));
+                string folderStamp = string.Join("|", files.OrderBy(f => f, StringComparer.Ordinal).Select(stamp));
+
+                entries.Add(loadCached(folder, folderStamp, () => OszImporter.LoadFromDirectory(folder)));
             }
 
             // Ordinal sort keeps song select stable between runs.
@@ -208,6 +210,61 @@ namespace OsuClient.Game.Beatmaps
                    .OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
                    .ThenBy(e => e.Path, StringComparer.Ordinal)
                    .ToList();
+        }
+
+        /// <summary>
+        /// Sets already decoded this session, by path, with the
+        /// <see cref="stamp"/> of their files when they were read.
+        ///
+        /// The library is read by the menu's music, by the warm-up the menu
+        /// runs in the background, and by song select on every visit, and
+        /// decoding every <c>.osu</c> each time made opening song select take
+        /// longer with every set in the library. A set is decoded again only
+        /// when one of its files changes, appears or goes away, so a freshly
+        /// generated map still shows up on the next read.
+        ///
+        /// Sharing the decoded sets between readers is safe because nothing
+        /// changes a set after decoding it — song select already hands the
+        /// same objects on to gameplay.
+        /// </summary>
+        private static readonly Dictionary<string, (string Stamp, BeatmapLibraryEntry Entry)> decoded =
+            new Dictionary<string, (string, BeatmapLibraryEntry)>(StringComparer.Ordinal);
+
+        private static readonly object decoded_lock = new object();
+
+        /// <summary>A file's path, size and last write time: enough to tell that it changed.</summary>
+        private static string stamp(string file)
+        {
+            try
+            {
+                var info = new FileInfo(file);
+                return $"{file}:{info.Length}:{info.LastWriteTimeUtc.Ticks}";
+            }
+            catch (IOException)
+            {
+                // Gone between listing and reading: never matches a stamp
+                // taken while it was there, so the set is simply read again.
+                return $"{file}:gone";
+            }
+        }
+
+        private static BeatmapLibraryEntry loadCached(string path, string fileStamp, Func<BeatmapSet> load)
+        {
+            lock (decoded_lock)
+            {
+                if (decoded.TryGetValue(path, out var cached) && cached.Stamp == fileStamp)
+                    return cached.Entry;
+            }
+
+            // Decoded outside the lock, so readers on other threads aren't
+            // held up behind it. Two of them can decode the same set at once;
+            // either result is the same, and the later one simply wins.
+            var entry = loadEntry(path, load);
+
+            lock (decoded_lock)
+                decoded[path] = (fileStamp, entry);
+
+            return entry;
         }
 
         private static BeatmapLibraryEntry loadEntry(string path, Func<BeatmapSet> load)

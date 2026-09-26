@@ -7,6 +7,7 @@ using osu.Framework.Graphics.Lines;
 using osu.Framework.Graphics.Shapes;
 using OsuClient.Game.Beatmaps;
 using OsuClient.Game.Beatmaps.HitObjects;
+using OsuClient.Game.Graphics.Rack;
 using osuTK;
 using osuTK.Graphics;
 
@@ -25,7 +26,6 @@ namespace OsuClient.Game.Screens.Gameplay
     public partial class DrawableSlider : DrawableHitObject
     {
         private const double exit_duration = 300;
-        private const float body_border_width = 6;
 
         /// <summary>Ticks this close to the end of a span are dropped, as in osu!.</summary>
         private const double tick_end_leniency = 10;
@@ -65,10 +65,9 @@ namespace OsuClient.Game.Screens.Gameplay
 
         private readonly Container head;
         private readonly ApproachCircle approach;
-        private readonly Container ball;
+        private readonly TapeReel ball;
         private readonly Container followCircle;
-        private readonly SmoothPath body;
-        private readonly SmoothPath bodyBorder;
+        private readonly SliderTapeBody body;
 
         private bool headJudged;
         private bool tracking;
@@ -101,15 +100,11 @@ namespace OsuClient.Game.Screens.Gameplay
 
             InternalChildren = new Drawable[]
             {
-                bodyBorder = new SmoothPath
+                // Magnetic tape: a combo-coloured outline round a translucent
+                // oxide ribbon (see SliderTapeBody).
+                body = new SliderTapeBody(comboColour)
                 {
                     PathRadius = CircleRadius,
-                    Colour = new Color4(1f, 1f, 1f, 0.85f),
-                },
-                body = new SmoothPath
-                {
-                    PathRadius = Math.Max(1, CircleRadius - body_border_width),
-                    Colour = new Color4(comboColour.R * 0.45f, comboColour.G * 0.45f, comboColour.B * 0.45f, 0.85f),
                 },
                 followCircle = new Container
                 {
@@ -123,13 +118,16 @@ namespace OsuClient.Game.Screens.Gameplay
                     Alpha = 0,
                     Child = new Box { RelativeSizeAxes = Axes.Both, Alpha = 0, AlwaysPresent = true },
                 },
-                ball = new Container
+                // The ball is a tape reel, turning as it runs along the tape.
+                // It turns on gameplay time, so it stops when play pauses.
+                ball = new TapeReel
                 {
                     Anchor = Anchor.TopLeft,
                     Origin = Anchor.Centre,
                     Size = new Vector2(diameter * 0.9f),
                     Alpha = 0,
-                    Child = new Circle { RelativeSizeAxes = Axes.Both, Colour = Color4.White },
+                    Running = true,
+                    TapeFill = 0.55f,
                 },
                 head = new Container
                 {
@@ -197,7 +195,6 @@ namespace OsuClient.Game.Screens.Gameplay
 
         private void setBodyVertices(IReadOnlyList<Vector2> vertices)
         {
-            bodyBorder.Vertices = vertices;
             body.Vertices = vertices;
 
             // Path sizes itself around its vertices, so it has to be shifted
@@ -205,7 +202,6 @@ namespace OsuClient.Game.Screens.Gameplay
             // on the playfield coordinate it was given. The box changes shape
             // as the path snakes in, so this has to be redone on every update
             // until snaking completes.
-            bodyBorder.Position = -bodyBorder.PositionInBoundingBox(Vector2.Zero);
             body.Position = -body.PositionInBoundingBox(Vector2.Zero);
         }
 
@@ -444,7 +440,7 @@ namespace OsuClient.Game.Screens.Gameplay
             this.FadeOut(exit_duration, Easing.OutQuint);
 
             if (result == HitResult.Miss)
-                bodyBorder.FadeColour(new Color4(1f, 0.4f, 0.4f, 1f), 100);
+                body.FadeColour(new Color4(1f, 0.4f, 0.4f, 1f), 100);
 
             return exit_duration;
         }

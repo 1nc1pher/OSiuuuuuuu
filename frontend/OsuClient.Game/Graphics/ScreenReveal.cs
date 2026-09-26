@@ -12,24 +12,35 @@ namespace OsuClient.Game.Graphics
     }
 
     /// <summary>
-    /// Everything a screen draws, held inside a circle that can grow out of a
-    /// point until it covers the window: the screen arriving through one
-    /// curve, with whatever was there before still showing outside it.
+    /// Everything a screen draws, held behind a straight vertical edge that
+    /// wipes across the window from one side: the screen arriving the way a
+    /// VCR's picture rolls in behind a tracking band, with whatever was there
+    /// before still showing ahead of the edge.
     ///
     /// <para>
-    /// The picture inside is held still while the circle grows round it, so
-    /// the edge is seen sweeping across a screen already in place rather than
-    /// the screen zooming out of a hole. Outside a reveal it is an ordinary
-    /// full-size container with no mask at all.
+    /// The picture inside is held still while the edge moves across it, so
+    /// the band is seen sweeping over a screen already in place rather than
+    /// the screen sliding in. Outside a reveal it is an ordinary full-size
+    /// container with no mask at all.
+    /// </para>
+    ///
+    /// <para>
+    /// The mask is a plain rectangle on purpose. It was a circle, and on the
+    /// integrated GPU this game is tuned on, rounded masking of anything much
+    /// bigger than a few hundred pixels silently fell back to its bounding
+    /// square; a rectangle is exact there, and is the cheapest mask there is.
     /// </para>
     /// </summary>
     public partial class ScreenReveal : Container
     {
-        private readonly CircularContainer mask;
+        /// <summary>How strongly a collapsed reveal draws its screen: enough to be drawn, too little to be seen.</summary>
+        private const float priming_alpha = 0.004f;
+
+        private readonly Container mask;
         private readonly Container content;
 
         private bool active;
-        private Vector2 centre;
+        private Vector2 origin;
 
         protected override Container<Drawable> Content => content;
 
@@ -37,52 +48,59 @@ namespace OsuClient.Game.Graphics
         {
             RelativeSizeAxes = Axes.Both;
 
-            InternalChild = mask = new CircularContainer
+            InternalChild = mask = new Container
             {
                 Child = content = new Container(),
             };
         }
 
-        /// <summary>The circle's diameter while revealing. Transformable.</summary>
-        public float Diameter { get; set; }
+        /// <summary>How far the wipe has got, 0 (nothing showing) to 1 (the whole window). Transformable.</summary>
+        public float Progress { get; set; }
 
         /// <summary>Whether a reveal is under way. Exposed for tests and screenshot scenes.</summary>
         public bool Revealing => active;
 
+        /// <summary>Where the wipe started from (local, and so window, space).</summary>
+        public Vector2 Origin => origin;
+
         /// <summary>
-        /// Hides everything behind a circle of nothing at <paramref name="at"/>
-        /// (local, and so window, space), ready for <see cref="Sweep"/>.
+        /// Hides everything behind an edge at <paramref name="at"/> (local, and
+        /// so window, space), ready for <see cref="Sweep"/>.
         /// </summary>
         public void Collapse(Vector2 at)
         {
-            ClearTransforms(false, nameof(Diameter));
+            ClearTransforms(false, nameof(Progress));
 
             active = true;
-            centre = at;
-            Diameter = 0;
+            origin = at;
+            Progress = 0;
         }
 
         /// <summary>
-        /// Grows the circle from where <see cref="Collapse"/> put it until it
-        /// covers the window, then drops the mask.
+        /// Moves the edge from where <see cref="Collapse"/> put it until the
+        /// window is covered, then drops the mask.
         /// </summary>
         public void Sweep(double duration, Easing easing)
         {
             if (!active)
                 return;
 
-            this.TransformTo(nameof(Diameter), CoverDiameter(centre, DrawSize), duration, easing)
+            this.TransformTo(nameof(Progress), 1f, duration, easing)
                 .OnComplete(_ => active = false);
         }
 
-        /// <summary>A circle this wide, centred on <paramref name="point"/>, reaches every corner of <paramref name="size"/>.</summary>
-        public static float CoverDiameter(Vector2 point, Vector2 size)
+        /// <summary>
+        /// The horizontal span a wipe from <paramref name="from"/> covers at
+        /// <paramref name="progress"/> across a window <paramref name="width"/>
+        /// wide. From an edge it grows across the whole window from that edge;
+        /// from anywhere in between it grows both ways, reaching both edges
+        /// together.
+        /// </summary>
+        public static (float Left, float Right) CoveredSpan(Vector2 from, float width, float progress)
         {
-            float x = Math.Max(point.X, size.X - point.X);
-            float y = Math.Max(point.Y, size.Y - point.Y);
+            float x = Math.Clamp(from.X, 0, width);
 
-            // A pixel over, so no antialiased rim is left in a corner.
-            return 2 * new Vector2(x, y).Length + 2;
+            return (x - x * progress, x + (width - x) * progress);
         }
 
         protected override void Update()
@@ -91,17 +109,37 @@ namespace OsuClient.Game.Graphics
 
             content.Size = DrawSize;
 
-            if (active)
+            if (active && Progress <= 0)
             {
+                // Collapsed, waiting for the sweep: drawn whole but too faint
+                // to see (under one step of 8-bit colour). A zero-width mask
+                // would cull everything, and the screen's first real draw —
+                // every texture upload, the blurred background's first render
+                // — would then land on the sweep's first frame, as a stall
+                // right as the edge starts to move. Drawn like this, it is
+                // paid while the screen waits instead.
+                mask.Masking = false;
+                mask.Size = DrawSize;
+                mask.Position = Vector2.Zero;
+                content.Position = Vector2.Zero;
+                content.Alpha = priming_alpha;
+            }
+            else if (active)
+            {
+                content.Alpha = 1;
+
+                var (left, right) = CoveredSpan(origin, DrawWidth, Progress);
+
                 mask.Masking = true;
-                mask.Size = new Vector2(Diameter);
-                mask.Position = centre - mask.Size / 2;
+                mask.Position = new Vector2(left, 0);
+                mask.Size = new Vector2(Math.Max(right - left, 0), DrawHeight);
 
                 // Counter to the mask, so the picture stays where it is.
                 content.Position = -mask.Position;
             }
             else
             {
+                content.Alpha = 1;
                 mask.Masking = false;
                 mask.Size = DrawSize;
                 mask.Position = Vector2.Zero;

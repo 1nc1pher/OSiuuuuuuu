@@ -164,15 +164,15 @@ namespace OsuClient.Game.Screens.SongSelect
             songsDirectory = requestedDirectory ?? BeatmapLibrary.ResolveDefaultSongsDirectory();
             entries = BeatmapLibrary.Load(songsDirectory);
 
-            // Every cover the wheel will show, decoded here on the load
-            // thread. The wedges are built in LoadComplete, on the update
-            // thread, and each decodes its own cover there on a miss — on a
-            // first visit that was most of a second of full-size JPEG
-            // decoding in one frame, which is what made the first PLAY
-            // stutter and every later one (cache warm) smooth. The menu loads
-            // this screen while its ripple plays, so this happens under that.
-            foreach (var entry in entries)
-                CoverArt.Load(renderer, entry.BackgroundPath, VinylWedge.ArtResolution);
+            // The cover the wheel opens on, decoded here on the load thread so
+            // the selected slice and its card are whole on the first frame.
+            // The rest are normally already decoded by the menu's background
+            // warm-up; any that aren't decode in the background once the
+            // wheel is up and fade in as they land (see VinylWedge). Decoding
+            // all of them here made the PLAY press wait on every cover in the
+            // library — about 30 ms a song, most of two seconds at 48 songs.
+            if (initialEntry() is { } opening)
+                CoverArt.Load(renderer, opening.BackgroundPath, VinylWedge.ArtResolution);
 
             InternalChild = reveal = new ScreenReveal
             {

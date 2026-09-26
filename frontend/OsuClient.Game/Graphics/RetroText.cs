@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics.Rendering;
 using osu.Framework.Graphics.Sprites;
@@ -85,6 +86,26 @@ namespace OsuClient.Game.Graphics
         private float textSize = 20;
         private bool dirty = true;
 
+        /// <summary>Whether the texture on show belongs to the shared cache, and so must not be disposed here.</summary>
+        private bool textureShared;
+
+        /// <summary>
+        /// Rendered textures shared between every <see cref="Shared"/> text of
+        /// the same font, size and string, per renderer (tests run several
+        /// hosts in one process, and a texture must never cross renderers).
+        /// </summary>
+        private static readonly ConditionalWeakTable<IRenderer, Dictionary<(RetroFontFamily, float, string), (Texture Texture, Vector2 Size)>> shared_cache =
+            new ConditionalWeakTable<IRenderer, Dictionary<(RetroFontFamily, float, string), (Texture, Vector2)>>();
+
+        /// <summary>
+        /// Reuse one rendered texture for every text with this font, size and
+        /// string, instead of rendering each afresh. For text that appears
+        /// many times over, such as the numbers on hit circles: a map spawns
+        /// hundreds of circles but only a few distinct numbers. Set before
+        /// the text loads.
+        /// </summary>
+        public bool Shared { get; init; }
+
         public RetroFontFamily Font
         {
             get => fontFamily;
@@ -128,7 +149,13 @@ namespace OsuClient.Game.Graphics
         {
             dirty = true;
 
-            if (IsLoaded)
+            // From Ready, not only once fully loaded: a screen loading in the
+            // background often fills in text after its panels have loaded but
+            // before they reach the screen (song select's info panel does).
+            // Waiting for LoadComplete moved all of that rasterizing, and its
+            // texture uploads, onto the update thread in the screen's first
+            // frames — a stall right as the transition started to move.
+            if (LoadState >= osu.Framework.Graphics.LoadState.Ready)
                 render();
         }
 
@@ -159,13 +186,35 @@ namespace OsuClient.Game.Graphics
 
             dirty = false;
 
-            Texture?.Dispose();
+            if (!textureShared)
+                Texture?.Dispose();
+
+            textureShared = false;
 
             if (string.IsNullOrEmpty(text))
             {
                 Texture = null!;
                 Size = Vector2.Zero;
                 return;
+            }
+
+            Dictionary<(RetroFontFamily, float, string), (Texture Texture, Vector2 Size)>? cache = null;
+            var key = (fontFamily, textSize, text);
+
+            if (Shared)
+            {
+                cache = shared_cache.GetValue(renderer, _ => new Dictionary<(RetroFontFamily, float, string), (Texture, Vector2)>());
+
+                lock (cache)
+                {
+                    if (cache.TryGetValue(key, out var hit))
+                    {
+                        Texture = hit.Texture;
+                        Size = hit.Size;
+                        textureShared = true;
+                        return;
+                    }
+                }
             }
 
             var font = families[fontFamily].CreateFont(textSize * supersample, FontStyle.Regular);
@@ -186,6 +235,25 @@ namespace OsuClient.Game.Graphics
 
             Texture = texture;
             Size = new Vector2(width / supersample, height / supersample);
+
+            if (cache != null)
+            {
+                lock (cache)
+                {
+                    // Another text may have rendered the same thing meanwhile;
+                    // keep whichever got there first and use that.
+                    if (cache.TryGetValue(key, out var existing))
+                    {
+                        texture.Dispose();
+                        Texture = existing.Texture;
+                        Size = existing.Size;
+                    }
+                    else
+                        cache[key] = (texture, Size);
+                }
+
+                textureShared = true;
+            }
         }
     }
 }

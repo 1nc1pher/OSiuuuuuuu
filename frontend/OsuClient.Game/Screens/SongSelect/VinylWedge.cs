@@ -1,8 +1,10 @@
 using System;
+using System.Threading.Tasks;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Rendering;
+using osu.Framework.Graphics.Textures;
 using osu.Framework.Graphics.UserInterface;
 using OsuClient.Game.Graphics;
 using osuTK;
@@ -16,7 +18,10 @@ namespace OsuClient.Game.Screens.SongSelect
     /// osu.Framework has no wedge primitive, so this is a
     /// <see cref="CircularProgress"/>: <see cref="CircularProgress.InnerRadius"/>
     /// at 1 fills all the way to the hub instead of drawing a ring, `Progress`
-    /// sets how wide the slice is, and `Rotation` puts it at its angle.
+    /// sets how wide the slice is, and `Rotation` puts it at its angle. The
+    /// layers are <see cref="SectorProgress"/>, which only rasterises the
+    /// slice itself: the stock shape paid for the whole ring per layer, which
+    /// made the wheel's cost grow with every song in the library.
     /// <c>DrawableSpinner</c>'s side meters already use the same primitive the
     /// same way.
     ///
@@ -48,14 +53,25 @@ namespace OsuClient.Game.Screens.SongSelect
         /// </summary>
         public const float InnerRadius = 0.62f;
 
-        private readonly string? artPath;
-        private readonly Color4 accent;
+        private string? artPath;
 
-        private readonly CircularProgress fill;
-        private readonly CircularProgress tint;
-        private readonly CircularProgress dim;
+        /// <summary>
+        /// Bumped whenever the wedge is given another song, so art still
+        /// decoding for the song it showed before is dropped when it lands.
+        /// </summary>
+        private int song;
+
+        private readonly SectorProgress fill;
+        private readonly SectorProgress tint;
+        private readonly SectorProgress dim;
 
         private bool hasArt;
+
+        /// <summary>How strongly the accent should wash over the art, as last asked for by <see cref="SetTint"/>.</summary>
+        private float tintStrength = 1;
+
+        /// <summary>How long art that decoded after the wheel appeared takes to come up through the accent.</summary>
+        private const double art_fade_duration = 400;
 
         [Resolved]
         private IRenderer renderer { get; set; } = null!;
@@ -68,8 +84,6 @@ namespace OsuClient.Game.Screens.SongSelect
         public VinylWedge(float sweepDegrees, Color4 accent, string? artPath)
         {
             this.artPath = artPath;
-
-            this.accent = accent;
 
             // Centred is load-bearing, not cosmetic: the selected wedge is
             // scaled up, and Scale pivots about Origin. Left at the default
@@ -100,7 +114,7 @@ namespace OsuClient.Game.Screens.SongSelect
         /// Rotation pivots about Origin, and any other value swings the wedge
         /// off the hub instead of turning it in place.
         /// </summary>
-        private static CircularProgress slice(float sweepDegrees) => new CircularProgress
+        private static SectorProgress slice(float sweepDegrees) => new SectorProgress
         {
             Anchor = Anchor.Centre,
             Origin = Anchor.Centre,
@@ -130,6 +144,7 @@ namespace OsuClient.Game.Screens.SongSelect
         /// </summary>
         public void SetTint(float strength, float dimStrength, double duration = 0)
         {
+            tintStrength = strength;
             tint.FadeTo(hasArt ? strength : 1, duration, Easing.OutQuint);
             dim.FadeTo(dimStrength, duration, Easing.OutQuint);
         }
@@ -153,19 +168,71 @@ namespace OsuClient.Game.Screens.SongSelect
                 duration, Easing.OutQuint);
         }
 
-        [BackgroundDependencyLoader]
-        private void load()
+        /// <summary>
+        /// Puts another song on this slice. The wheel has a fixed number of
+        /// slices and a library can hold more songs than that, so a slice
+        /// turning away round the far side of the record is handed the next
+        /// song coming round.
+        /// </summary>
+        public void SetSong(string? newArtPath, Color4 accent)
         {
-            var texture = CoverArt.Load(renderer, artPath, ArtResolution);
+            artPath = newArtPath;
+            tint.Colour = accent;
+            song++;
 
+            loadArt();
+        }
+
+        [BackgroundDependencyLoader]
+        private void load() => loadArt();
+
+        private void loadArt()
+        {
+            // Cached art (the usual case — the menu decodes the library's
+            // covers in the background) goes straight on. Otherwise the wedge
+            // shows as its flat accent colour and the art fades in when it
+            // has decoded, instead of the screen waiting on every cover in
+            // the library before it can open.
+            if (CoverArt.TryGetCached(artPath, ArtResolution, out var texture))
+            {
+                showArt(texture, 0);
+                return;
+            }
+
+            showArt(null, 0);
+
+            int requestedFor = song;
+
+            CoverArt.LoadAsync(renderer, artPath, ArtResolution)
+                    .ContinueWith(t => Schedule(() =>
+                    {
+                        if (requestedFor == song)
+                            showArt(t.Result, art_fade_duration);
+                    }), TaskContinuationOptions.OnlyOnRanToCompletion);
+        }
+
+        private void showArt(Texture? texture, double duration)
+        {
             hasArt = texture != null;
 
-            if (texture != null)
-                fill.Texture = texture;
-            else
+            if (texture == null)
+            {
                 // A set with unreadable art still gets its wedge, as a flat
                 // accent colour — a missing slice would be a gap in the record.
                 fill.Alpha = 0;
+                tint.ClearTransforms();
+                tint.Alpha = 1;
+                return;
+            }
+
+            fill.Texture = texture;
+            fill.Alpha = 1;
+
+            // The art sits under the accent wash, which is fully opaque while
+            // there's no art; easing the wash back to its usual strength
+            // brings the cover up through the colour.
+            tint.ClearTransforms();
+            tint.FadeTo(tintStrength, duration, Easing.OutQuint);
         }
     }
 }
