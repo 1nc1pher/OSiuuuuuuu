@@ -37,11 +37,13 @@ from mapping.hit_object import (
     HitObject, PLAYFIELD_W, PLAYFIELD_H, PLAYFIELD_MARGIN, PLAYFIELD_CENTER,
     circle_radius, DEFAULT_CIRCLE_SIZE,
 )
-from mapping.slider_generator import generate_slider
+from mapping.slider_generator import (
+    generate_slider, slider_end_position, slider_body_points, polyline_distance,
+)
 from mapping.spinner_generator import generate_spinner
 from mapping.object_classifier import (
     snap_onsets, sustain_ratio, classify, assign_geometry, build_objects,
-    summarize, _point_segment_distance, MIN_SEPARATION_DIAMETERS,
+    summarize, MIN_SEPARATION_DIAMETERS,
 )
 
 
@@ -187,7 +189,7 @@ def test_classify_empty_onsets_returns_empty():
 def _cursor_after(obj):
     """Where the cursor is left after `obj` (a slider ends away from its start)."""
     if obj.kind == "slider" and obj.path:
-        return obj.path[-1] if obj.slides % 2 == 1 else obj.path[0]
+        return slider_end_position(obj)
     return (obj.x, obj.y)
 
 
@@ -204,8 +206,9 @@ def _placement_report(objs, circle_size):
             px, py = _cursor_after(prev)
             min_sep = min(min_sep, np.hypot(o.x - px, o.y - py) / diameter)
             if prev.kind == "slider" and prev.path:
-                body = _point_segment_distance((o.x, o.y), prev.path[0],
-                                                prev.path[-1]) / diameter
+                # the whole drawn body -- a curve is not its chord
+                body = polyline_distance((o.x, o.y),
+                                         slider_body_points(prev)) / diameter
                 min_body = min(min_body, body)
         prev = o
     return min_sep, min_body

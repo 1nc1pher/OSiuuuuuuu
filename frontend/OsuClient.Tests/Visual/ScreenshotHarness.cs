@@ -124,6 +124,20 @@ namespace OsuClient.Tests.Visual
                 ["upload-loaded"] = () => UploadScene.Loaded(),
                 ["upload-labelled"] = () => UploadScene.Labelled(),
                 ["upload-with-cover"] = () => UploadScene.Covered(),
+                // Gameplay of a beatmap folder on disk -- the first
+                // difficulty in OSU_SCREENSHOT_SET -- for looking at what
+                // the generator actually produced (slider shapes, say) as
+                // the game draws it. Nobody is playing, so capture before
+                // the first object would be missed.
+                ["gameplay-folder"] = () =>
+                {
+                    string folder = Environment.GetEnvironmentVariable("OSU_SCREENSHOT_SET")
+                                    ?? throw new InvalidOperationException("set OSU_SCREENSHOT_SET to a beatmap folder");
+                    var set = Game.Beatmaps.OszImporter.LoadFromDirectory(folder);
+                    var entry = new Game.Beatmaps.BeatmapLibraryEntry { Path = folder, Set = set };
+                    return new Game.Screens.Gameplay.PlayerScreen(
+                        new Game.Screens.SongSelect.BeatmapSelection(entry, set.Beatmaps[0]));
+                },
                 // The pause menu on its own, shown, with all three choices.
                 ["pause-menu"] = () =>
                 {
@@ -226,6 +240,8 @@ namespace OsuClient.Tests.Visual
                 // it took to load. Capture any time after that.
                 ["ripple-play-arriving"] = () => new RippleScene(play: true, freezeAfterArrival: 120),
                 ["ripple-create-arriving"] = () => new RippleScene(play: false, freezeAfterArrival: 120),
+                ["ripple-play-sweep"] = () => new RippleScene(play: true, freezeAfterArrival: 280),
+                ["ripple-create-sweep"] = () => new RippleScene(play: false, freezeAfterArrival: 280),
                 // A results screen for a run that set a new best.
                 ["results-new-best"] = () => new Game.Screens.Results.ResultsScreen(new Game.Screens.Results.ResultsScreen.Result
                 {

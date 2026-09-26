@@ -20,7 +20,7 @@ namespace OsuClient.Tests.Visual
     /// depends on how long it took to load — and song select's first frame
     /// after arriving is one long stall on top of that. For that,
     /// <c>freezeAfterArrival</c> stops the scene's clock that many
-    /// milliseconds after the new screen's slide actually starts, so any
+    /// milliseconds after the new screen's curve actually starts sweeping, so any
     /// later capture shows that exact moment of it.
     /// </summary>
     public partial class RippleScene : CompositeDrawable
@@ -82,8 +82,8 @@ namespace OsuClient.Tests.Visual
             if (freezeAfterArrival == null || !stopwatch.IsRunning)
                 return;
 
-            if (arrivedAt == null && stack.CurrentScreen is Drawable arriving && arriving != menu
-                && System.Linq.Enumerable.Any(arriving.Transforms, t => t.TargetMember == nameof(X)))
+            if (arrivedAt == null && stack.CurrentScreen is IRevealable arriving && arriving != menu
+                && arriving.Reveal.Revealing && arriving.Reveal.Diameter > 0)
             {
                 arrivedAt = stopwatch.CurrentTime;
             }

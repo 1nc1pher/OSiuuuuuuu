@@ -46,8 +46,13 @@ namespace OsuClient.Game.Screens.Generation
     /// stops at the surface, and <c>TestSceneUploadScreen</c> passes unedited.
     /// </para>
     /// </summary>
-    public partial class UploadScreen : Screen
+    public partial class UploadScreen : Screen, IRevealable
     {
+        private ScreenReveal reveal = null!;
+
+        /// <summary>Everything this screen draws, for the menu to open it through one curve.</summary>
+        public ScreenReveal Reveal => reveal;
+
         /// <summary>
         /// The tiers offered, with the star target each is labelled by.
         ///
@@ -155,48 +160,51 @@ namespace OsuClient.Game.Screens.Generation
             if (fileSelector != null)
                 fileSelector.Selected += file => Schedule(() => chooseFile(file.FullName));
 
-            InternalChildren = new Drawable[]
+            InternalChild = reveal = new ScreenReveal
             {
-                // A workbench holds still, so the art does not drift here the
-                // way it does behind the menu's moving logo.
-                //
-                // It also stays grey. MenuBackground only spreads colour when
-                // asked (the menu pushes it out of the logo), and not asking
-                // is the right answer here: leaving the art monochrome means
-                // every coloured thing on this screen is carrying meaning —
-                // the difficulty ramp, the record lamp, the label's spine —
-                // rather than competing with a photograph.
-                background = new MenuBackground { Drifting = false },
-                // Knocked back further than the menu's own 22%. The menu is a
-                // title screen and the art is the subject; this is a form, and
-                // the art is a backdrop for text.
-                new Box
+                Children = new Drawable[]
                 {
-                    RelativeSizeAxes = Axes.Both,
-                    Colour = new Color4(0f, 0f, 0f, 0.42f),
-                },
-                music,
-                sounds,
-                new Container
-                {
-                    RelativeSizeAxes = Axes.Both,
-                    Padding = new MarginPadding { Horizontal = 46, Vertical = 34 },
-                    Child = new GridContainer
-                    {
-                        RelativeSizeAxes = Axes.Both,
-                        RowDimensions = new[]
+                        // A workbench holds still, so the art does not drift here the
+                        // way it does behind the menu's moving logo.
+                        //
+                        // It also stays grey. MenuBackground only spreads colour when
+                        // asked (the menu pushes it out of the logo), and not asking
+                        // is the right answer here: leaving the art monochrome means
+                        // every coloured thing on this screen is carrying meaning —
+                        // the difficulty ramp, the record lamp, the label's spine —
+                        // rather than competing with a photograph.
+                        background = new MenuBackground { Drifting = false },
+                        // Knocked back further than the menu's own 22%. The menu is a
+                        // title screen and the art is the subject; this is a form, and
+                        // the art is a backdrop for text.
+                        new Box
                         {
-                            new Dimension(GridSizeMode.Absolute, 34),
-                            new Dimension(),
-                            new Dimension(GridSizeMode.Absolute, 232),
+                            RelativeSizeAxes = Axes.Both,
+                            Colour = new Color4(0f, 0f, 0f, 0.42f),
                         },
-                        Content = new[]
+                        music,
+                        sounds,
+                        new Container
                         {
-                            new Drawable[] { createHeader() },
-                            new Drawable[] { createBayRow() },
-                            new Drawable[] { createDeckPanel() },
+                            RelativeSizeAxes = Axes.Both,
+                            Padding = new MarginPadding { Horizontal = 46, Vertical = 34 },
+                            Child = new GridContainer
+                            {
+                                RelativeSizeAxes = Axes.Both,
+                                RowDimensions = new[]
+                                {
+                                    new Dimension(GridSizeMode.Absolute, 34),
+                                    new Dimension(),
+                                    new Dimension(GridSizeMode.Absolute, 232),
+                                },
+                                Content = new[]
+                                {
+                                    new Drawable[] { createHeader() },
+                                    new Drawable[] { createBayRow() },
+                                    new Drawable[] { createDeckPanel() },
+                                },
+                            },
                         },
-                    },
                 },
             };
 

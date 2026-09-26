@@ -40,8 +40,13 @@ namespace OsuClient.Game.Screens.SongSelect
     /// whatever height is left between them — and shrinks in place rather
     /// than moving when that isn't enough. See <see cref="Update"/>.
     /// </summary>
-    public partial class RetroSongSelectScreen : Screen
+    public partial class RetroSongSelectScreen : Screen, IRevealable
     {
+        private ScreenReveal reveal = null!;
+
+        /// <summary>Everything this screen draws, for the menu to open it through one curve.</summary>
+        public ScreenReveal Reveal => reveal;
+
         // ------------------------------------------------------------------
         // Wheel geometry.
         //
@@ -169,46 +174,49 @@ namespace OsuClient.Game.Screens.SongSelect
             foreach (var entry in entries)
                 CoverArt.Load(renderer, entry.BackgroundPath, VinylWedge.ArtResolution);
 
-            InternalChildren = new Drawable[]
+            InternalChild = reveal = new ScreenReveal
             {
-                background = new CarouselBackground(),
-                wheelArea = new Container
+                Children = new Drawable[]
                 {
-                    Origin = Anchor.Centre,
-                    Children = new Drawable[]
-                    {
-                        turntable = new Turntable(),
-                        carousel = new VinylCarousel(),
-                    },
-                },
-                infoArea = new Container
-                {
-                    Anchor = Anchor.TopLeft,
-                    Origin = Anchor.TopLeft,
-                    AutoSizeAxes = Axes.Y,
-                    Position = new Vector2(margin),
-                    Child = infoPanel = new SongInfoPanel(),
-                },
-                analyseButton = new AnalyseDeckButton(),
-                difficultyArea = new Container
-                {
-                    Anchor = Anchor.TopLeft,
-                    Origin = Anchor.TopLeft,
-                    AutoSizeAxes = Axes.Y,
-                    Child = difficultyColumn = new FillFlowContainer
-                    {
-                        RelativeSizeAxes = Axes.X,
-                        AutoSizeAxes = Axes.Y,
-                        Direction = FillDirection.Vertical,
-                        Spacing = new Vector2(0, 13),
-                    },
-                },
-                searchArea = new Container
-                {
-                    Anchor = Anchor.BottomLeft,
-                    Origin = Anchor.BottomLeft,
-                    AutoSizeAxes = Axes.Y,
-                    Child = searchBar = new CassetteSearchBar(),
+                        background = new CarouselBackground(),
+                        wheelArea = new Container
+                        {
+                            Origin = Anchor.Centre,
+                            Children = new Drawable[]
+                            {
+                                turntable = new Turntable(),
+                                carousel = new VinylCarousel(),
+                            },
+                        },
+                        infoArea = new Container
+                        {
+                            Anchor = Anchor.TopLeft,
+                            Origin = Anchor.TopLeft,
+                            AutoSizeAxes = Axes.Y,
+                            Position = new Vector2(margin),
+                            Child = infoPanel = new SongInfoPanel(),
+                        },
+                        analyseButton = new AnalyseDeckButton(),
+                        difficultyArea = new Container
+                        {
+                            Anchor = Anchor.TopLeft,
+                            Origin = Anchor.TopLeft,
+                            AutoSizeAxes = Axes.Y,
+                            Child = difficultyColumn = new FillFlowContainer
+                            {
+                                RelativeSizeAxes = Axes.X,
+                                AutoSizeAxes = Axes.Y,
+                                Direction = FillDirection.Vertical,
+                                Spacing = new Vector2(0, 13),
+                            },
+                        },
+                        searchArea = new Container
+                        {
+                            Anchor = Anchor.BottomLeft,
+                            Origin = Anchor.BottomLeft,
+                            AutoSizeAxes = Axes.Y,
+                            Child = searchBar = new CassetteSearchBar(),
+                        },
                 },
             };
 

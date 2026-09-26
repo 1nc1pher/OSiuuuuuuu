@@ -321,21 +321,63 @@ hand-made rather than like a random walk:
    kind mappers use deliberately -- never one object sitting invisibly on
    top of another.
 2. **Stay off the slider body.** A candidate must clear the body of the
-   slider it just came off. Because the cursor already sits at the
-   slider's end, this naturally parks the next object just past that end
-   and off to one side -- exactly where mappers put it.
+   slider it just came off -- the whole drawn curve, not the line from
+   head to tail. Because the cursor already sits at the slider's end,
+   this naturally parks the next object just past that end and off to one
+   side -- exactly where mappers put it.
 3. **Flow.** The heading turns only slightly across short gaps, so a
    stream comes out as a smooth arc that keeps curving the same way; long
    gaps may turn sharply, so jumps get real angles. The turn limit rises
    Easy -> Expert (`max_turn_degrees`). Near an edge the heading is
    nudged back toward the middle, so patterns use the whole playfield
-   instead of crawling along a wall.
+   instead of crawling along a wall. A slider leaves its head along the
+   heading it arrived on, so if the spot chosen for a slider head points
+   it at a wall or back across recent objects, placement looks within 50
+   degrees of the flow for a spot with a clean lane (room for the whole
+   slide plus a diameter to exit into) -- the turn then happens on the
+   approach, not as a kink at the head.
 
 Candidates are proposed along the flow heading and, if a rule is
-violated, swept around in widening steps until one fits. Ranking is
-strict: on the playfield first, then off the slider body, then not
-crowding an older circle. Spinners are always centred and clear the
+violated, swept around in widening steps until one fits; the first that
+fits is used. Only when none does is the best-ranked one taken, and that
+ranking is strict: on the playfield first, then off the slider body, then
+not crowding an older circle. Spinners are always centred and clear the
 placement history (they take over the screen anyway).
+
+### Slider shapes
+
+`slider_generator.py` fixes a slider's timing first -- slide count and
+per-slide `pixel_length`, exactly as for a straight slider -- and only
+then picks what one slide looks like:
+
+| shape | `.osu` curve | tiers | notes |
+|-------|--------------|-------|-------|
+| straight | `L`, 2 anchors | all | the original slider, and the fallback |
+| arc | `P`, 3 anchors | all | bend capped by the tier's `max_turn_degrees` (Easy stays gentle) |
+| S-curve | `B`, 4 anchors | Normal+ | swings out to one side and back; leaves parallel to how it came in |
+| corner | `L`, 3 anchors | Hard+ | two legs with an elbow of at most 90 degrees |
+
+Rules every curve obeys (all measured on the body the game draws -- the
+sampler mirrors the client's `SliderPath.cs`):
+
+- **no kink**: it leaves the head along the incoming heading; arcs and
+  corners bend toward the side the pattern is already curving;
+- **timing untouched**: each curve is built slightly longer than
+  `pixel_length` so the client trims it, never stretches it;
+- **no overlap**: it stays inside the playfield margin, never comes
+  closer to a recent object or slider body than its own head already is,
+  and leaves the cursor a diameter of room to exit into. A curve is only
+  used when it passes, or when it fails less than the straight slider
+  would;
+- **readable**: repeat and very short sliders only arc gently, and no arc
+  on a longer slider curls tighter than 0.75 circle diameters.
+
+A straight slider that would end facing a wall is the one case where an
+arc is tried first: bending along the wall keeps the next object off the
+body. Measured on six real songs, 60 maps per build, against the
+straight-only generator: fewer objects buried under other visible
+objects (69 -> 33), no more buried right after a slider, fewer kinks at
+slider heads, and slightly smoother cursor turns in every tier.
 
 **Tuning knobs** (CLI flags):
 - `--margin` / `--delta`: passed straight through to the Step 2 onset
@@ -393,7 +435,17 @@ by actually play-testing a generated map in osu!(lazer):
   pixels for the same distance-snap setting.
 
 `tests/test_difficulty.py` re-runs the first two across **all five
-tiers**, since that's where the problem showed up.
+tiers**, since that's where the problem showed up. Both measure against
+the drawn slider body, curves included.
+
+`tests/test_slider_generator.py` covers the slider shapes: the curve
+sampler (arcs through all three anchors, bezier segments, trimming),
+exact body length, timing identical to the straight slider, bodies on the
+playfield, no kink at the head, never worse clearance than the straight
+alternative, swinging away from an object in its path, minimum arc
+radius, the per-tier shape menu, the writer's curve letters, and a
+regression for a head sitting exactly on the margin line (which used to
+send a straight slider its full length off the playfield).
 
 **3. Integration tests through the real Step 2 -> 3 -> 4 chain**
 Synthesized audio designed to force one specific outcome:
@@ -518,8 +570,10 @@ Output in `data/output/`:
   Step 5 preset (`DifficultyPreset.to_osu_difficulty_section()`)
 - `[TimingPoints]` -- one uninherited (red) line: the Step 3 tempo + offset
 - `[HitObjects]` -- one record per object. `type` is the osu! bitfield
-  (1 circle / 2 slider / 8 spinner, +4 new combo). Sliders are linear
-  (`L|`) with the per-slide `pixel_length` and slide count from Step 4;
+  (1 circle / 2 slider / 8 spinner, +4 new combo). Sliders carry their
+  curve type (`L|` straight or corner, `P|` arc, `B|` S-curve -- see
+  *Slider shapes*) with the per-slide `pixel_length` and slide count from
+  Step 4;
   spinners carry an end time; new combos start the map, follow every
   spinner, and follow any rest of 4+ beats.
 

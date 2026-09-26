@@ -111,16 +111,18 @@ def hit_object_line(obj, new_combo: bool = False) -> str:
     if obj.kind == "slider":
         if not obj.path or len(obj.path) < 2:
             raise ValueError(f"slider at {obj.time:.3f}s has no path")
-        # curve points are every anchor AFTER the start; linear ("L") slider
+        # curve points are every anchor AFTER the start, read with the
+        # slider's curve type (L straight/corner, P arc, B bezier)
         pts = "|".join(f"{int(round(px))}:{int(round(py))}"
                        for px, py in obj.path[1:])
+        curve_type = obj.curve_type or "L"
         slides = int(obj.slides)
         length = float(obj.pixel_length)
         edges = slides + 1
         edge_sounds = "|".join(["0"] * edges)
         edge_sets = "|".join(["0:0"] * edges)
         return (f"{x},{y},{t},{_type_field(_TYPE_SLIDER, new_combo)},0,"
-                f"L|{pts},{slides},{length:.2f},{edge_sounds},{edge_sets},{sample}")
+                f"{curve_type}|{pts},{slides},{length:.2f},{edge_sounds},{edge_sets},{sample}")
 
     raise ValueError(f"unknown hit object kind: {obj.kind!r}")
 

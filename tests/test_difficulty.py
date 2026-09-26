@@ -179,8 +179,9 @@ def test_no_tier_stacks_objects_or_buries_them_in_sliders():
     top of each other, and circles hidden inside the slider they followed.
     Every tier must stay clear of both."""
     from mapping.hit_object import circle_radius
-    from mapping.object_classifier import (
-        _point_segment_distance, MIN_SEPARATION_DIAMETERS,
+    from mapping.object_classifier import MIN_SEPARATION_DIAMETERS
+    from mapping.slider_generator import (
+        slider_end_position, slider_body_points, polyline_distance,
     )
 
     track = _synth_track()
@@ -195,18 +196,17 @@ def test_no_tier_stacks_objects_or_buries_them_in_sliders():
                 prev = None
                 continue
             if prev is not None:
-                if prev.kind == "slider" and prev.path:
-                    px, py = (prev.path[-1] if prev.slides % 2 == 1
-                              else prev.path[0])
-                else:
-                    px, py = prev.x, prev.y
+                # measured on the body the game draws, which for a curved
+                # slider is neither its anchors nor the line between them
+                px, py = (slider_end_position(prev) if prev.kind == "slider"
+                          else (prev.x, prev.y))
                 sep = np.hypot(o.x - px, o.y - py) / diameter
                 assert sep >= MIN_SEPARATION_DIAMETERS - 1e-6, (
                     f"{name}: objects {sep:.2f} diameters apart at {o.time:.2f}s")
 
                 if prev.kind == "slider" and prev.path:
-                    body = _point_segment_distance(
-                        (o.x, o.y), prev.path[0], prev.path[-1]) / diameter
+                    body = polyline_distance(
+                        (o.x, o.y), slider_body_points(prev)) / diameter
                     assert body >= 0.45, (
                         f"{name}: object buried in a slider body at {o.time:.2f}s")
             prev = o

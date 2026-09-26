@@ -311,6 +311,19 @@ namespace OsuClient.Game.Screens.MainMenu
             var grey = createLayer(path, greyscale: true);
             var colour = createLayer(path, greyscale: false);
 
+            // Set while the screen it belongs to is still loading: load the
+            // picture with it and show it from the first frame. Loaded later
+            // and faded in, it arrived as black and then art partway through
+            // the menu's reveal of the screen.
+            if (!IsLoaded && displayedGrey == null)
+            {
+                grey.Alpha = colour.Alpha = 1;
+
+                greyDrift.Add(displayedGrey = grey);
+                colourDrift.Add(displayedColour = colour);
+                return;
+            }
+
             pendingGrey = grey;
             pendingColour = colour;
 

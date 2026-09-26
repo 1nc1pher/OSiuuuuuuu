@@ -64,7 +64,9 @@ from mapping.hit_object import (
     circle_radius, DEFAULT_CIRCLE_SIZE,
 )
 from mapping.slider_generator import (
-    generate_slider, slider_end_position, DEFAULT_SLIDER_MULTIPLIER,
+    generate_slider, slider_end_position, slider_exit_heading,
+    slider_body_points, polyline_distance, room_ahead, clearance_ratio,
+    straight_lane, DEFAULT_SLIDER_MULTIPLIER, MIN_SLIDE_PX, MAX_SLIDE_PX,
 )
 from mapping.spinner_generator import generate_spinner
 
@@ -91,6 +93,7 @@ RECENT_POINT_CLEARANCE_DIAMETERS = 0.8  # and off the last few object centres
 MAX_SPACING_DIAMETERS = 4.0             # sanity cap on one jump
 PLACEMENT_ATTEMPTS_DEG = (0, 25, -25, 50, -50, 80, -80, 110, -110, 145, -145, 180)
 PLACEMENT_HISTORY = 4                   # how many recent objects to avoid
+SLIDER_LANE_SEARCH_DEGREES = 50         # how far off the flow a slider head may move for a clean lane
 
 
 @dataclass
@@ -353,30 +356,24 @@ def _trace(trace, snapped, gap_beats, sustain, gap_is_clean, run, became):
 #      "continuation" kind mappers use deliberately -- never one object
 #      sitting invisibly on top of another.
 #   2. STAY OFF THE SLIDER BODY. A candidate must clear the body of the
-#      slider it just came off. Since the cursor already sits at the
-#      slider's end, this naturally parks the next object just past that
-#      end and off to one side -- exactly where mappers put it.
+#      slider it just came off -- the whole curve, not just the line from
+#      head to tail. Since the cursor already sits at the slider's end,
+#      this naturally parks the next object just past that end and off to
+#      one side -- exactly where mappers put it. The slider generator
+#      keeps the other half of the bargain: a curved body is only used if
+#      it never swings back across the recent objects either.
 #   3. FLOW. The heading turns only slightly across short gaps, so a
 #      stream comes out as a smooth arc (and keeps curving the same way);
 #      long gaps may turn sharply, so jumps get real angles. The turn
-#      limit rises Easy -> Expert.
+#      limit rises Easy -> Expert. A slider leaves its head along the
+#      heading it arrived on, so a slider head is only placed where that
+#      heading has a clear lane for a slider -- room before the wall, and
+#      not back across the recent objects -- so any turn happens on the
+#      approach, not as a kink at the head or a body over an old circle.
 #
 # Candidates are proposed along the flow heading and, if a rule is
 # violated, swept around in widening steps until one fits; the best
 # candidate is used if none fully fits.
-
-def _point_segment_distance(p, a, b) -> float:
-    """Shortest distance from point `p` to the line segment a-b."""
-    px, py = p
-    ax, ay = a
-    bx, by = b
-    vx, vy = bx - ax, by - ay
-    denom = vx * vx + vy * vy
-    if denom <= 1e-12:
-        return math.hypot(px - ax, py - ay)
-    t = max(0.0, min(1.0, ((px - ax) * vx + (py - ay) * vy) / denom))
-    return math.hypot(px - (ax + t * vx), py - (ay + t * vy))
-
 
 def _blend_angle(a: float, b: float, w: float) -> float:
     """Rotate angle `a` a fraction `w` of the way toward angle `b`."""
@@ -401,7 +398,7 @@ def _clearance_ratios(p, history, point_min: float, segment_min: float) -> tuple
                 dist = math.hypot(p[0] - entry[1][0], p[1] - entry[1][1])
                 worst_point = min(worst_point, dist / point_min)
         elif segment_min > 1e-9:
-            dist = _point_segment_distance(p, entry[1], entry[2])
+            dist = polyline_distance(p, entry[1])
             worst_segment = min(worst_segment, dist / segment_min)
     return (1.0 if worst_segment == math.inf else worst_segment,
             1.0 if worst_point == math.inf else worst_point)
@@ -422,7 +419,9 @@ def assign_geometry(objs, grid: BeatGrid, sv_multiplier: float = 1.0,
             below is measured in.
         distance_spacing: circle diameters travelled per beat (the
             editor's distance-snap multiplier).
-        max_turn_degrees: how far flow may turn on a full-beat gap.
+        max_turn_degrees: how far flow may turn on a full-beat gap. Also
+            bounds how sharply sliders may curve, and which slider shapes a
+            tier gets (see slider_generator.py).
         slider_multiplier / sv_multiplier: slider speed.
     """
     if not objs:
@@ -487,28 +486,60 @@ def assign_geometry(objs, grid: BeatGrid, sv_multiplier: float = 1.0,
         pull = 0.0 if edge_dist >= comfort else 0.55 * (1.0 - max(edge_dist, 0.0) / comfort)
         flow_heading = _blend_angle(heading + turn, to_center, pull)
 
+        def candidate(base_heading, deg):
+            h = base_heading + math.radians(deg)
+            nx = x + math.cos(h) * target
+            ny = y + math.sin(h) * target
+            in_bounds = lo_x <= nx <= hi_x and lo_y <= ny <= hi_y
+            seg_ratio, pt_ratio = _clearance_ratios((nx, ny), history,
+                                                    point_min, segment_min)
+            fits = in_bounds and seg_ratio >= 1.0 and pt_ratio >= 1.0
+            # rank: on the playfield first, then off the slider body,
+            # then not crowding an older circle
+            score = (1 if in_bounds else 0, min(seg_ratio, 1.5), min(pt_ratio, 1.5))
+            return score, fits, deg, h, nx, ny
+
         best, done = None, False
         for base_heading in (flow_heading, to_center):
             for deg in PLACEMENT_ATTEMPTS_DEG:
-                h = base_heading + math.radians(deg)
-                nx = x + math.cos(h) * target
-                ny = y + math.sin(h) * target
-                in_bounds = lo_x <= nx <= hi_x and lo_y <= ny <= hi_y
-                seg_ratio, pt_ratio = _clearance_ratios((nx, ny), history,
-                                                        point_min, segment_min)
-                # rank: on the playfield first, then off the slider body,
-                # then not crowding an older circle
-                score = (1 if in_bounds else 0,
-                         min(seg_ratio, 1.5), min(pt_ratio, 1.5))
-                if best is None or score > best[0]:
-                    best = (score, deg, h, nx, ny)
-                if in_bounds and seg_ratio >= 1.0 and pt_ratio >= 1.0:
-                    done = True
+                c = candidate(base_heading, deg)
+                if best is None or c[0] > best[0]:
+                    best = c
+                if c[1]:
+                    best, done = c, True
                     break
             if done:
                 break
 
-        (in_bounds_flag, _, _), deg, h, nx, ny = best
+        # A slider leaves its head along the heading it arrived on. If the
+        # spot chosen above points it at a wall (so it would have to be
+        # turned at the head -- a kink -- or run into the wall and leave
+        # nothing but its own body for the next object), look near the flow
+        # heading for a spot that fits every rule AND has a clean lane: room
+        # for the whole slide plus a diameter to exit into, not running back
+        # across recent objects. Only ever a swap for a better spot; with
+        # none nearby, placement is exactly what it always was.
+        if obj.kind == "slider" and done:
+            slider_px = min(MAX_SLIDE_PX, max(0.25, (obj.end_time - obj.time) / grid.beat_period)
+                            * 100.0 * slider_multiplier * sv_multiplier)
+
+            def clean_lane(c):
+                ahead = (math.cos(c[3]), math.sin(c[3]))
+                room = room_ahead((c[4], c[5]), ahead, MAX_SLIDE_PX + diameter)
+                lane = straight_lane((c[4], c[5]), ahead, max(MIN_SLIDE_PX, slider_px))
+                return (room >= slider_px + diameter and clearance_ratio(
+                    lane, history, diameter * SLIDER_BODY_CLEARANCE_DIAMETERS) >= 1.0)
+
+            if not clean_lane(best):
+                for deg in PLACEMENT_ATTEMPTS_DEG:
+                    if abs(deg) > SLIDER_LANE_SEARCH_DEGREES:
+                        continue
+                    c = candidate(flow_heading, deg)
+                    if c[1] and clean_lane(c):
+                        best = c
+                        break
+
+        (in_bounds_flag, _, _), _, deg, h, nx, ny = best
         if not in_bounds_flag:
             nx = float(np.clip(nx, lo_x, hi_x))     # last resort
             ny = float(np.clip(ny, lo_y, hi_y))
@@ -523,14 +554,20 @@ def assign_geometry(objs, grid: BeatGrid, sv_multiplier: float = 1.0,
             generate_slider(obj, grid, start=(nx, ny),
                             direction=(math.cos(h), math.sin(h)),
                             sv_multiplier=sv_multiplier,
-                            slider_multiplier=slider_multiplier)
-            start_pt, end_pt = obj.path[0], obj.path[-1]
-            history.append(("segment", start_pt, end_pt))
+                            slider_multiplier=slider_multiplier,
+                            rng=rng, curl=curl, max_bend_degrees=max_turn_degrees,
+                            diameter=diameter, avoid=list(history),
+                            clearance=diameter * SLIDER_BODY_CLEARANCE_DIAMETERS)
+            history.append(("body", slider_body_points(obj)))
             x, y = slider_end_position(obj)
-            # carry the slider's own direction as the new flow (reversed
-            # when an even slide count brings the cursor back to the start)
-            body = math.atan2(end_pt[1] - start_pt[1], end_pt[0] - start_pt[0])
-            heading = body if obj.slides % 2 == 1 else body + math.pi
+            # carry the slider's own direction as the new flow: the tail's
+            # tangent, or back out of the head when an even slide count
+            # returns the cursor there
+            heading = slider_exit_heading(obj)
+            # a slider that bent one way keeps the pattern bending that way
+            bend = _blend_angle(0.0, heading - h, 1.0) if obj.slides % 2 == 1 else 0.0
+            if abs(bend) > math.radians(5):
+                curl = 1.0 if bend > 0 else -1.0
         else:
             history.append(("point", (nx, ny)))
             x, y = nx, ny
@@ -666,10 +703,11 @@ def plot_playfield(objs, out_path: str = None, show: bool = False,
                     fontsize=8, color="tab:red", zorder=4)
             continue
         if o.kind == "slider" and o.path:
-            (sx, sy), (ex, ey) = o.path[0], o.path[-1]
-            ax.plot([sx, ex], [sy, ey], color="tab:green", alpha=0.25,
-                    linewidth=radius * 1.55, solid_capstyle="round", zorder=1)
-            ax.plot([sx, ex], [sy, ey], color="tab:green", alpha=0.9,
+            bx, by = zip(*slider_body_points(o))
+            ax.plot(bx, by, color="tab:green", alpha=0.25,
+                    linewidth=radius * 1.55, solid_capstyle="round",
+                    solid_joinstyle="round", zorder=1)
+            ax.plot(bx, by, color="tab:green", alpha=0.9,
                     linewidth=1.2, zorder=3)
         color = "tab:green" if o.kind == "slider" else "tab:blue"
         ax.add_patch(MplCircle((o.x, o.y), radius, facecolor=color,

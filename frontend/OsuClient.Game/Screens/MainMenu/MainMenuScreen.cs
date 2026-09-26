@@ -151,25 +151,18 @@ namespace OsuClient.Game.Screens.MainMenu
         private ScreenRipple? ripple { get; set; }
 
         /// <summary>
-        /// How long the rings get on screen before the next screen may arrive,
-        /// and how long the menu takes to reach its half-faded hold.
+        /// How long the curve takes to cross the window — the menu's own
+        /// colour spread, on the same curve, so a screen change feels like
+        /// the menu opening.
         /// </summary>
-        private const double transition_lead = 380;
-
-        /// <summary>How faded the menu is while the next screen is still loading.</summary>
-        private const float leaving_hold_alpha = 0.4f;
-
-        /// <summary>How far off its edge the arriving screen starts, as a fraction of the width.</summary>
-        private const float arriving_offset = 0.22f;
-
-        private const double arrive_duration = 650;
+        private const double reveal_duration = 1150;
 
         /// <summary>
-        /// How long, once suspended, the menu holds half-faded before fading
-        /// out on its own. The arriving screen normally starts the fade sooner
-        /// itself; this is what keeps the menu on screen until it does.
+        /// How long, once suspended, the menu stays drawn: the whole sweep,
+        /// with room for the arriving screen's slow first frames before it
+        /// starts. Past that the new screen covers it entirely anyway.
         /// </summary>
-        private const double suspended_hold = 400;
+        private const double suspended_hold = reveal_duration + 900;
 
         /// <summary>Whether the menu is leaving through a ripple, from the press until it is back.</summary>
         private bool leavingThroughRipple;
@@ -542,18 +535,17 @@ namespace OsuClient.Game.Screens.MainMenu
         }
 
         /// <summary>
-        /// Leaves for another screen through a ripple from
-        /// <paramref name="edge"/>, with the transition whoosh travelling the
-        /// same way.
+        /// Leaves for another screen through a single curve from
+        /// <paramref name="edge"/>: the next screen grows out of that edge
+        /// inside a circle, over the menu, until it covers the window — with
+        /// one glowing ring on the curve and the transition whoosh travelling
+        /// the same way.
         ///
-        /// There is no curtain. The menu starts fading the moment the button
-        /// is pressed — in place: drifting it sideways uncovered a hard black
-        /// strip along the window edge it moved away from. The next screen loads
-        /// meanwhile, and once it has — and the rings have had a moment on
-        /// screen — it is pushed, sliding in from that edge as it fades up
-        /// while the menu finishes fading out beneath it. Loading starts at
-        /// the press rather than after, because song select reads the whole
-        /// library before it can show and that is time nobody should wait on.
+        /// The menu stays exactly as it is outside the curve; nothing fades.
+        /// The next screen loads from the press, because song select reads
+        /// the whole library before it can show and that is time nobody
+        /// should wait on — and the sweep only starts once it has drawn its
+        /// first, heavy frame, so the curve never stalls partway across.
         /// </summary>
         private void leaveThrough(RippleEdge edge, Func<Screen> next)
         {
@@ -568,44 +560,33 @@ namespace OsuClient.Game.Screens.MainMenu
             if (!ripple.Begin(edge))
                 return;
 
-            sounds.PlayTransition(fromRight: edge == RippleEdge.Right);
-
             leavingThroughRipple = true;
-            double pressedAt = Time.Current;
-
-            // Partway out while the next screen loads: still there, clearly
-            // on its way. The rest happens in OnSuspending, once there is
-            // something arriving to replace it.
-            this.FadeTo(leaving_hold_alpha, transition_lead, Easing.OutQuad);
 
             var screen = next();
 
-            LoadComponentAsync(screen, _ =>
-            {
-                double wait = Math.Max(0, transition_lead - (Time.Current - pressedAt));
-
-                Scheduler.AddDelayed(() => arrive(screen, edge), wait);
-            });
+            LoadComponentAsync(screen, _ => arrive(screen, edge));
         }
 
         private void arrive(Screen screen, RippleEdge edge)
         {
-            if (!this.IsCurrentScreen())
+            if (!this.IsCurrentScreen() || ripple == null)
             {
                 ripple?.End();
                 return;
             }
 
-            float start = -awayFrom(edge) * DrawWidth * arriving_offset;
+            var reveal = (screen as IRevealable)?.Reveal;
 
-            screen.X = start;
+            // Shut before it is ever drawn: the circle starts at nothing, on
+            // the edge the ring will come from.
+            reveal?.Collapse(ripple.RingOrigin);
+
             this.Push(screen);
 
-            // Held at its starting point — off the ripple's edge, all but
-            // invisible — until it has drawn a couple of ordinary frames.
-            // Song select does heavy work on its first frame (the wheel, the
-            // preview track); a slide started at the push was mostly gone by
-            // the time that frame ended, and it simply appeared in place.
+            // Held shut until it has drawn a couple of ordinary frames. Song
+            // select does heavy work on its first frame (the wheel, the
+            // preview track); a sweep started at the push had mostly run by
+            // the time that frame ended, and the screen simply appeared.
             int frames = 0;
 
             void beginWhenSettled(Drawable arriving)
@@ -614,44 +595,30 @@ namespace OsuClient.Game.Screens.MainMenu
 
                 if (frames == 1)
                 {
-                    // Here rather than straight after the push: the push
-                    // completes, and the screen's own OnEntering starts its
-                    // fade, a moment later — which then ran over the hold.
-                    // Not quite zero: a drawable at Alpha 0 is not present,
-                    // stops updating, and would never get to its slide.
-                    arriving.ClearTransforms();
-                    arriving.X = start;
-                    arriving.Alpha = 0.01f;
+                    // Here rather than straight after the push: the screen's
+                    // own OnEntering fade starts a moment later, and the curve
+                    // is the whole entrance — the picture inside it is whole.
+                    arriving.ClearTransforms(false, nameof(Alpha));
+                    arriving.Alpha = 1;
                     return;
                 }
 
-                // Waiting only for the one long frame, not for the frame
-                // rate to recover: song select runs a little slow for a while
-                // after it arrives, and holding for a fast frame left the
-                // menu fading out over nothing.
                 if (frames < settle_frames)
                     return;
 
                 arriving.OnUpdate -= beginWhenSettled;
 
-                // In from the ripple's edge — the right for PLAY, the left
-                // for CREATE — while the menu finishes fading beneath it.
-                arriving.MoveToX(0, arrive_duration, Easing.OutQuint);
-                arriving.FadeIn(arrive_duration * 0.8, Easing.OutQuad);
+                if (reveal != null)
+                    reveal.Sweep(reveal_duration, Easing.OutQuint);
 
-                // Replaces the fallback fade queued in OnSuspending, so the
-                // menu goes as the new screen comes rather than on a timer.
-                this.ClearTransforms(false, nameof(Alpha));
-                this.FadeOut(arrive_duration * 0.7, Easing.OutQuad);
+                ripple.Sweep(reveal_duration, Easing.OutQuint);
+                sounds.PlayTransition(fromRight: edge == RippleEdge.Right);
 
-                ripple?.End();
+                ripple.End();
             }
 
             screen.OnUpdate += beginWhenSettled;
         }
-
-        /// <summary>-1 to move left, away from a ripple starting on the right; +1 the other way.</summary>
-        private static float awayFrom(RippleEdge edge) => edge == RippleEdge.Right ? -1 : 1;
 
         protected override bool OnKeyDown(KeyDownEvent e)
         {
@@ -756,8 +723,11 @@ namespace OsuClient.Game.Screens.MainMenu
             // is the fallback, and the menu's lifetime on screen.
             if (leavingThroughRipple)
             {
-                this.FadeTo(leaving_hold_alpha, suspended_hold)
-                    .Then().FadeOut(arrive_duration * 0.7, Easing.OutQuad);
+                // The second, no-op transform only stretches the lifetime:
+                // the stack ends it with the last transform, and a fade due at
+                // that exact moment never gets a frame to apply in.
+                this.Delay(suspended_hold).FadeOut()
+                    .Delay(100).FadeOut();
             }
 
             // Song select carries on with the same song, so it keeps playing

@@ -57,7 +57,9 @@ class HitObject:
 
     Slider-only (filled by slider_generator):
       end_time     -- time the slider finishes (all slides)
-      path         -- absolute anchor points, [(x0,y0), (x1,y1)] for a linear slider
+      path         -- absolute anchor points, head first
+      curve_type   -- osu! curve letter the anchors are read with: "L" (straight
+                      or corner), "P" (perfect-circle arc), "B" (bezier)
       slides       -- number of slides (1 = no repeat, 2 = one repeat, ...)
       pixel_length -- length of ONE slide of the path, in osu!pixels
       slider_beats -- intended total duration in beats
@@ -79,6 +81,7 @@ class HitObject:
 
     # slider
     path: Optional[List[Tuple[float, float]]] = None
+    curve_type: str = "L"
     slides: int = 1
     pixel_length: Optional[float] = None
     slider_beats: Optional[float] = None
