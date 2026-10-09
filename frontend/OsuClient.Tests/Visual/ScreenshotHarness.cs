@@ -80,6 +80,18 @@ namespace OsuClient.Tests.Visual
 
                     return input;
                 },
+                // The song list and the credits, opened by calling the screen
+                // directly: they prove the open state renders and nothing
+                // about the click that reaches it.
+                ["main-menu-songlist"] = () => menuWithPanel(screen => screen.OpenSongList()),
+                ["main-menu-credits"] = () => menuWithPanel(screen => screen.OpenCredits()),
+                // The same two states reached by real clicks on the real
+                // buttons, in the tree the game builds (cursor layer included).
+                ["main-menu-songlist-clicked"] = () => menuClicking<Game.Screens.MainMenu.NowPlayingDisplay>(),
+                ["main-menu-credits-clicked"] = () => menuClicking<Game.Screens.MainMenu.InfoButton>(),
+                // The info button under the pointer, which a still frame
+                // cannot otherwise show.
+                ["main-menu-info-hover"] = () => menuClicking<Game.Screens.MainMenu.InfoButton>(click: false),
                 // The spectrum ring on a fixed signal. A capture of the real
                 // menu shows whatever the song was doing in that millisecond,
                 // which is no use for checking the ring's own geometry.
@@ -328,6 +340,52 @@ namespace OsuClient.Tests.Visual
                     return screen;
                 },
             };
+
+        /// <summary>
+        /// The menu with something opened over it a moment after it loads —
+        /// long enough for the song list's rows, which load in the
+        /// background, to have arrived.
+        /// </summary>
+        private static Drawable menuWithPanel(Action<Game.Screens.MainMenu.MainMenuScreen> open)
+        {
+            var screen = new Game.Screens.MainMenu.MainMenuScreen();
+            screen.OnLoadComplete += _ => screen.Delay(1500).Schedule(() => open(screen));
+            return screen;
+        }
+
+        /// <summary>
+        /// The real tree with a real pointer: moves to the first
+        /// <typeparamref name="T"/> on the menu, clicks it (unless told only
+        /// to hover), and leaves the pointer there.
+        /// </summary>
+        private static Drawable menuClicking<T>(bool click = true)
+            where T : Drawable
+        {
+            var screen = new Game.Screens.MainMenu.MainMenuScreen();
+
+            var stack = new ScreenStack { RelativeSizeAxes = Axes.Both };
+
+            var input = new osu.Framework.Testing.Input.ManualInputManager
+            {
+                RelativeSizeAxes = Axes.Both,
+                Children = new Drawable[]
+                {
+                    stack,
+                    new Game.Graphics.Cursor.GameCursor(),
+                },
+            };
+
+            stack.Push(screen);
+
+            // Late enough that the credit has faded in (it is held back
+            // 600 ms after the logo) and is hit-testable.
+            screen.OnLoadComplete += _ => input.Delay(1800).Schedule(() => input.MoveMouseTo(screen.ChildrenOfType<T>().First()));
+
+            if (click)
+                screen.OnLoadComplete += _ => input.Delay(1900).Schedule(() => input.Click(osuTK.Input.MouseButton.Left));
+
+            return input;
+        }
 
         private static Game.Screens.MainMenu.MenuLogo logoOf(Drawable screen) =>
             screen.ChildrenOfType<Game.Screens.MainMenu.MenuLogo>().Single();

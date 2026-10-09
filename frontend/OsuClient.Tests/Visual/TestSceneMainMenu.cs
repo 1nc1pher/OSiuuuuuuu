@@ -100,6 +100,155 @@ namespace OsuClient.Tests.Visual
         }
 
         /// <summary>
+        /// The info button opens the credits, anything closes them, and
+        /// neither the click that opens nor the click that closes reaches the
+        /// logo underneath.
+        /// </summary>
+        [Test]
+        public void TestInfoButtonOpensTheCredits()
+        {
+            ManualInputManager input = null!;
+            MainMenuScreen menu = null!;
+
+            AddStep("load menu", () =>
+            {
+                Child = input = new ManualInputManager
+                {
+                    RelativeSizeAxes = Axes.Both,
+                    Child = new ScreenStack { RelativeSizeAxes = Axes.Both }
+                        .With(stack => stack.Push(menu = new MainMenuScreen())),
+                };
+            });
+
+            AddUntilStep("menu loaded", () => menu.IsLoaded);
+            AddWaitStep("let it settle", 10);
+
+            AddAssert("credits start shut", () => credits(menu).State.Value == Visibility.Hidden);
+
+            AddStep("point at the info button", () => input.MoveMouseTo(menu.ChildrenOfType<InfoButton>().Single()));
+            AddStep("click it", () => input.Click(MouseButton.Left));
+
+            AddUntilStep("credits are open", () => credits(menu).Alpha > 0.95f);
+
+            AddAssert("everyone is named", () =>
+            {
+                var lines = credits(menu).ChildrenOfType<RetroText>().Select(t => t.Text).ToArray();
+
+                return new[]
+                {
+                    "DEVELOPED BY", "Arafat Bin A Sattar Inan", "Adiba Noor Morshed",
+                    "SUPERVISED BY", "Rokonuzzaman Sojib", "Lecturer, CSE, BUET",
+                }.All(lines.Contains) && lines.Count(l => l == "CSE, BUET") == 2;
+            });
+
+            // Aimed at the logo itself: if the credits let the click through,
+            // the strip would open behind them.
+            AddStep("click on the logo", () =>
+            {
+                input.MoveMouseTo(logo(menu));
+                input.Click(MouseButton.Left);
+            });
+
+            AddUntilStep("credits are shut", () => credits(menu).Alpha < 0.01f);
+            AddAssert("the logo never saw the click", () => strip(menu).Expansion < 0.001f);
+
+            AddStep("open again", () => menu.OpenCredits());
+            AddUntilStep("open", () => credits(menu).Alpha > 0.95f);
+            AddStep("press escape", () =>
+            {
+                input.PressKey(Key.Escape);
+                input.ReleaseKey(Key.Escape);
+            });
+            AddUntilStep("escape shuts them", () => credits(menu).Alpha < 0.01f);
+        }
+
+        /// <summary>
+        /// Clicking the now-playing credit drops the song list, a click
+        /// elsewhere puts it away, and picking a row changes the song.
+        ///
+        /// Like the music test, only meaningful with a playable library: with
+        /// no song there is no credit to click, and the steps pass over that.
+        /// </summary>
+        [Test]
+        public void TestNowPlayingOpensTheSongList()
+        {
+            ManualInputManager input = null!;
+            MainMenuScreen menu = null!;
+
+            AddStep("load menu", () =>
+            {
+                Child = input = new ManualInputManager
+                {
+                    RelativeSizeAxes = Axes.Both,
+                    Child = new ScreenStack { RelativeSizeAxes = Axes.Both }
+                        .With(stack => stack.Push(menu = new MainMenuScreen())),
+                };
+            });
+
+            AddUntilStep("menu loaded", () => menu.IsLoaded);
+
+            // The credit is held back for a moment on entry, and the rows load
+            // in the background.
+            AddUntilStep("credit has appeared", () => !hasSongs(menu) || nowPlaying(menu).Alpha > 0.95f);
+            AddUntilStep("list has loaded", () => !hasSongs(menu) || songPicker(menu).Rows.Count > 0);
+
+            AddStep("point at the credit", () => input.MoveMouseTo(nowPlaying(menu)));
+            AddStep("click it", () => input.Click(MouseButton.Left));
+
+            AddUntilStep("list is open", () => !hasSongs(menu) || songPicker(menu).Alpha > 0.95f);
+
+            AddAssert("it lists every playable song", () =>
+                !hasSongs(menu) || songPicker(menu).Rows.Count == music(menu).PlayableSongs.Count);
+
+            AddAssert("the song playing is marked", () =>
+                !hasSongs(menu) || songPicker(menu).Rows.Count(r => r.IsCurrent) == 1);
+
+            AddStep("click the credit again", () => input.Click(MouseButton.Left));
+            AddUntilStep("list is away", () => !hasSongs(menu) || songPicker(menu).Alpha < 0.01f);
+
+            // And the chooser itself: a different row starts that song.
+            string? before = null;
+
+            AddStep("open it", () =>
+            {
+                before = music(menu).Entry?.Path;
+                menu.OpenSongList();
+            });
+
+            AddUntilStep("open", () => !hasSongs(menu) || songPicker(menu).Alpha > 0.95f);
+
+            AddStep("click a row that is not playing", () =>
+            {
+                if (!hasSongs(menu) || songPicker(menu).Rows.Count < 2)
+                    return;
+
+                // The nearest row that is not the current one, so it is on screen.
+                var rows = songPicker(menu).Rows;
+                var target = rows.Where(r => !r.IsCurrent)
+                                 .OrderBy(r => Math.Abs(r.ScreenSpaceDrawQuad.Centre.Y - songPicker(menu).ScreenSpaceDrawQuad.Centre.Y))
+                                 .First();
+
+                input.MoveMouseTo(target);
+                input.Click(MouseButton.Left);
+            });
+
+            AddUntilStep("the song changed", () =>
+                !hasSongs(menu) || songPicker(menu).Rows.Count < 2 || music(menu).Entry?.Path != before);
+
+            AddUntilStep("list put itself away", () => !hasSongs(menu) || songPicker(menu).Alpha < 0.01f);
+        }
+
+        private static bool hasSongs(MainMenuScreen menu) => music(menu).PlayableSongs.Count > 0;
+
+        private static MenuTrack music(MainMenuScreen menu) => menu.ChildrenOfType<MenuTrack>().Single();
+
+        private static SongPicker songPicker(MainMenuScreen menu) => menu.ChildrenOfType<SongPicker>().Single();
+
+        private static CreditsOverlay credits(MainMenuScreen menu) => menu.ChildrenOfType<CreditsOverlay>().Single();
+
+        private static NowPlayingDisplay nowPlaying(MainMenuScreen menu) => menu.ChildrenOfType<NowPlayingDisplay>().Single();
+
+        /// <summary>
         /// The music starts quiet and swells when the menu opens.
         ///
         /// Only meaningful on a machine with a playable library — with no

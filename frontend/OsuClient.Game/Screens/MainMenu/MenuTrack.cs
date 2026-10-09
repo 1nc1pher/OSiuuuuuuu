@@ -108,6 +108,21 @@ namespace OsuClient.Game.Screens.MainMenu
         /// <summary>Raised on the update thread whenever a different song starts.</summary>
         public event Action? SongChanged;
 
+        /// <summary>
+        /// Raised on the update thread when a library refresh finds a
+        /// different set of playable songs, so a list built from
+        /// <see cref="PlayableSongs"/> knows to rebuild.
+        /// </summary>
+        public event Action? LibraryChanged;
+
+        /// <summary>
+        /// Every song the menu could play, in library order — what the song
+        /// picker lists. Same filter as the shuffle, so a song the picker
+        /// offers is always one that will actually start.
+        /// </summary>
+        public IReadOnlyList<BeatmapLibraryEntry> PlayableSongs =>
+            library.Where(hasPlayableAudio).ToArray();
+
         /// <summary>The set being played, or null when nothing could be played.</summary>
         public BeatmapLibraryEntry? Entry { get; private set; }
 
@@ -216,8 +231,19 @@ namespace OsuClient.Game.Screens.MainMenu
                 .ContinueWith(t =>
                 {
                     if (t.IsCompletedSuccessfully)
-                        Schedule(() => library = t.Result);
+                        Schedule(() => replaceLibrary(t.Result));
                 });
+        }
+
+        private void replaceLibrary(IReadOnlyList<BeatmapLibraryEntry> loaded)
+        {
+            bool changed = !library.Where(hasPlayableAudio).Select(e => e.Path)
+                .SequenceEqual(loaded.Where(hasPlayableAudio).Select(e => e.Path));
+
+            library = loaded;
+
+            if (changed)
+                LibraryChanged?.Invoke();
         }
 
         /// <summary>

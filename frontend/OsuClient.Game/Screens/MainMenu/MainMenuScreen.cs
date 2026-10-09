@@ -10,6 +10,7 @@ using osu.Framework.Platform;
 using osu.Framework.Screens;
 using osu.Framework.Extensions.Color4Extensions;
 using OsuClient.Game.Audio;
+using OsuClient.Game.Beatmaps;
 using OsuClient.Game.Graphics;
 using OsuClient.Game.Screens.Gameplay;
 using OsuClient.Game.Screens.Generation;
@@ -141,6 +142,9 @@ namespace OsuClient.Game.Screens.MainMenu
         private MenuLogo logo = null!;
         private SpectrumRing spectrum = null!;
         private NowPlayingDisplay nowPlaying = null!;
+        private InfoButton infoButton = null!;
+        private SongPicker songPicker = null!;
+        private CreditsOverlay credits = null!;
         private MenuStrip strip = null!;
         private RetroText closedHint = null!;
         private RetroText openHint = null!;
@@ -285,6 +289,15 @@ namespace OsuClient.Game.Screens.MainMenu
                         Anchor = Anchor.TopRight,
                         Origin = Anchor.TopRight,
                         Margin = new MarginPadding(margin),
+                        Clicked = toggleSongPicker,
+                    },
+                    // The credit's counterpart in the other top corner.
+                    infoButton = new InfoButton
+                    {
+                        Anchor = Anchor.TopLeft,
+                        Origin = Anchor.TopLeft,
+                        Margin = new MarginPadding(margin),
+                        Clicked = showCredits,
                     },
                     // Two prepared lines swapped by alpha rather than one whose
                     // text changes: RetroText rasterizes a new texture on every
@@ -318,8 +331,15 @@ namespace OsuClient.Game.Screens.MainMenu
                             },
                         },
                     },
+                    // Last, so they draw over everything else and take the
+                    // first click: the list drops from the credit above, and
+                    // the credits cover the whole screen.
+                    songPicker = new SongPicker(playFromList, dismissSongPicker, sounds),
+                    credits = new CreditsOverlay(dismissCredits),
                 },
             };
+
+            songPicker.State.ValueChanged += e => nowPlaying.SetOpen(e.NewValue == Visibility.Visible);
 
             // Outside the game there is no shared music, and this one is the
             // menu's own; it has to be in the tree to load and play.
@@ -341,8 +361,12 @@ namespace OsuClient.Game.Screens.MainMenu
             shownSongPath = menuTrack.Entry?.Path;
 
             menuTrack.SongChanged += onSongChanged;
+            menuTrack.LibraryChanged += rebuildSongList;
 
             spectrum.SetTrack(menuTrack);
+
+            rebuildSongList();
+            songPicker.SetCurrent(shownSongPath);
 
             // Whatever state was asked for before the screen finished
             // loading, without animating into it.
@@ -370,6 +394,13 @@ namespace OsuClient.Game.Screens.MainMenu
             // otherwise run off both edges and take its buttons with it.
             strip.TargetWidth = MathF.Min(side * strip_width_factor, DrawWidth - margin * 2);
             strip.CentreGap = side * strip_gap_factor;
+
+            // Hangs just below the credit it opens from, whatever height that
+            // has come out at.
+            songPicker.Layout(
+                margin + (nowPlaying.DrawHeight > 0 ? nowPlaying.DrawHeight : 76) + 14,
+                DrawHeight,
+                DrawWidth);
 
             double beat = currentBeatIntensity();
 
@@ -526,6 +557,78 @@ namespace OsuClient.Game.Screens.MainMenu
             openHint.FadeTo(expanded ? 1 : 0, duration / 2, Easing.OutQuint);
         }
 
+        private void rebuildSongList() => songPicker.SetSongs(menuTrack.PlayableSongs);
+
+        private bool songPickerOpen => songPicker.State.Value == Visibility.Visible;
+
+        private bool creditsOpen => credits.State.Value == Visibility.Visible;
+
+        /// <summary>Opens the song list from outside the screen. For the test scenes, like <see cref="Expand"/>.</summary>
+        public void OpenSongList() => openSongPicker();
+
+        /// <summary>Opens the credits from outside the screen. For the test scenes, like <see cref="Expand"/>.</summary>
+        public void OpenCredits() => showCredits();
+
+        private void toggleSongPicker()
+        {
+            if (songPickerOpen)
+                dismissSongPicker();
+            else
+                openSongPicker();
+        }
+
+        private void openSongPicker()
+        {
+            if (songPickerOpen || creditsOpen)
+                return;
+
+            sounds.PlayListOpen();
+            songPicker.Show();
+        }
+
+        private void dismissSongPicker()
+        {
+            if (!songPickerOpen)
+                return;
+
+            sounds.PlayClose();
+            songPicker.Hide();
+        }
+
+        /// <summary>
+        /// A row clicked. The list goes away on a pick — it is a chooser, not
+        /// a panel to keep open — with the deck key's click instead of the
+        /// lid's, because something was chosen rather than put away.
+        /// </summary>
+        private void playFromList(BeatmapLibraryEntry entry)
+        {
+            sounds.PlayPick();
+            songPicker.Hide();
+
+            menuTrack.Play(entry);
+        }
+
+        private void showCredits()
+        {
+            if (creditsOpen)
+                return;
+
+            // One thing over the menu at a time.
+            songPicker.Hide();
+
+            sounds.PlayCredits();
+            credits.Show();
+        }
+
+        private void dismissCredits()
+        {
+            if (!creditsOpen)
+                return;
+
+            sounds.PlayClose();
+            credits.Hide();
+        }
+
         private void pushSongSelect()
         {
             if (!this.IsCurrentScreen())
@@ -650,6 +753,29 @@ namespace OsuClient.Game.Screens.MainMenu
 
         protected override bool OnKeyDown(KeyDownEvent e)
         {
+            // Whatever is open over the menu gets the keys first: Enter would
+            // otherwise start a game underneath the credits.
+            if (creditsOpen || songPickerOpen)
+            {
+                switch (e.Key)
+                {
+                    case osuTK.Input.Key.Escape:
+                    case osuTK.Input.Key.Enter:
+                    case osuTK.Input.Key.KeypadEnter:
+                    case osuTK.Input.Key.Space:
+                        // Enter and Space dismiss the credits; on the list they
+                        // are ignored, as the list has no selection to confirm.
+                        if (creditsOpen)
+                            dismissCredits();
+                        else if (e.Key == osuTK.Input.Key.Escape)
+                            dismissSongPicker();
+
+                        return true;
+                }
+
+                return base.OnKeyDown(e);
+            }
+
             switch (e.Key)
             {
                 case osuTK.Input.Key.Enter:
@@ -711,6 +837,7 @@ namespace OsuClient.Game.Screens.MainMenu
             shownSongPath = menuTrack.Entry?.Path;
 
             nowPlaying.ChangeSong(menuTrack.Title, menuTrack.Artist);
+            songPicker.SetCurrent(shownSongPath);
 
             if (wallpaper == null)
                 background.SetBackground(menuTrack.BackgroundPath);
@@ -722,6 +849,10 @@ namespace OsuClient.Game.Screens.MainMenu
 
             this.FadeIn(250, Easing.OutQuint);
             leavingThroughRipple = false;
+
+            // Left shut behind the screen that was pushed, but make sure.
+            songPicker.Hide();
+            credits.Hide();
             revealClip.Release();
 
 
@@ -744,6 +875,9 @@ namespace OsuClient.Game.Screens.MainMenu
         public override void OnSuspending(ScreenTransitionEvent e)
         {
             base.OnSuspending(e);
+
+            songPicker.Hide();
+            credits.Hide();
 
             // The stack keeps a suspended screen drawn only until the
             // transforms queued right now have finished, so the fade-out has
@@ -771,7 +905,10 @@ namespace OsuClient.Game.Screens.MainMenu
             // The shared music outlives this screen; a handler left on it
             // would call into a disposed menu.
             if (menuTrack != null)
+            {
                 menuTrack.SongChanged -= onSongChanged;
+                menuTrack.LibraryChanged -= rebuildSongList;
+            }
 
             base.Dispose(isDisposing);
         }

@@ -1,5 +1,8 @@
+using System;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Shapes;
+using osu.Framework.Input.Events;
 using OsuClient.Game.Graphics;
 using osuTK;
 
@@ -11,12 +14,22 @@ namespace OsuClient.Game.Screens.MainMenu
     ///
     /// Starts hidden and is only ever shown once a song is actually playing —
     /// an empty library leaves this blank rather than showing an empty frame.
+    ///
+    /// Also the button that opens the song list: the chevron beside the label
+    /// says so, the label and chevron light up under the pointer, and the
+    /// chevron turns over while the list is out.
     /// </summary>
     public partial class NowPlayingDisplay : CompositeDrawable
     {
         private readonly RetroText label;
         private readonly RetroText title;
         private readonly RetroText artist;
+        private readonly Triangle chevron;
+
+        private bool open;
+
+        /// <summary>Raised when the credit is clicked. The screen decides what that opens.</summary>
+        public Action? Clicked;
 
         public NowPlayingDisplay()
         {
@@ -30,14 +43,43 @@ namespace OsuClient.Game.Screens.MainMenu
                 Spacing = new Vector2(0, 7),
                 Children = new Drawable[]
                 {
-                    label = new RetroText
+                    new FillFlowContainer
                     {
                         Anchor = Anchor.TopRight,
                         Origin = Anchor.TopRight,
-                        Font = RetroFontFamily.Display,
-                        TextSize = 9,
-                        Text = "NOW PLAYING",
-                        Colour = RetroPalette.TextDim,
+                        AutoSizeAxes = Axes.Both,
+                        Direction = FillDirection.Horizontal,
+                        Spacing = new Vector2(8, 0),
+                        Children = new Drawable[]
+                        {
+                            label = new RetroText
+                            {
+                                Anchor = Anchor.CentreLeft,
+                                Origin = Anchor.CentreLeft,
+                                Font = RetroFontFamily.Display,
+                                TextSize = 9,
+                                Text = "NOW PLAYING",
+                                Colour = RetroPalette.TextDim,
+                            },
+                            // The triangle is turned inside a plain box: a drawable
+                            // rotates about its origin, and the flow sets this
+                            // one's origin to its left edge, so turning the
+                            // triangle itself swung it over the label.
+                            new Container
+                            {
+                                Anchor = Anchor.CentreLeft,
+                                Origin = Anchor.CentreLeft,
+                                Size = new Vector2(9, 6),
+                                Child = chevron = new Triangle
+                                {
+                                    RelativeSizeAxes = Axes.Both,
+                                    Anchor = Anchor.Centre,
+                                    Origin = Anchor.Centre,
+                                    Rotation = 180,
+                                    Colour = RetroPalette.TextDim,
+                                },
+                            },
+                        },
                     },
                     title = new RetroText
                     {
@@ -105,5 +147,45 @@ namespace OsuClient.Game.Screens.MainMenu
 
         /// <summary>The "NOW PLAYING" label, exposed for the accent colour.</summary>
         public RetroText Label => label;
+
+        /// <summary>
+        /// Whether the song list is out, which keeps the label lit and turns
+        /// the chevron over to point back up at what will close it.
+        /// </summary>
+        public void SetOpen(bool value)
+        {
+            open = value;
+
+            // Points down shut, up open.
+            chevron.RotateTo(open ? 0 : 180, 260, Easing.OutQuint);
+            applyHighlight(IsHovered);
+        }
+
+        private void applyHighlight(bool hovered)
+        {
+            var colour = hovered || open ? RetroPalette.Cyan : RetroPalette.TextDim;
+
+            label.FadeColour(colour, 160, Easing.OutQuint);
+            chevron.FadeColour(colour, 160, Easing.OutQuint);
+        }
+
+        protected override bool OnHover(HoverEvent e)
+        {
+            applyHighlight(true);
+            title.FadeColour(RetroPalette.Cyan, 160, Easing.OutQuint);
+            return true;
+        }
+
+        protected override void OnHoverLost(HoverLostEvent e)
+        {
+            applyHighlight(false);
+            title.FadeColour(RetroPalette.Text, 260, Easing.OutQuint);
+        }
+
+        protected override bool OnClick(ClickEvent e)
+        {
+            Clicked?.Invoke();
+            return true;
+        }
     }
 }
