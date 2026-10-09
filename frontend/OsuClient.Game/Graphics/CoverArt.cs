@@ -92,7 +92,7 @@ namespace OsuClient.Game.Graphics
         }
 
         /// <summary>
-        /// The texture for <paramref name="path"/>, resized to a square of
+        /// The texture for <paramref name="path"/>, cropped from its centre to a square of
         /// <paramref name="resolution"/>, or null when there's no usable image
         /// there. Callers are expected to cope with null rather than treat it
         /// as an error — most sets simply have no art.
@@ -117,7 +117,15 @@ namespace OsuClient.Game.Graphics
             {
                 using var image = Image.Load<Rgba32>(path);
 
-                image.Mutate(ctx => ctx.Resize(resolution, resolution));
+                // Cropped to the centre square, not squashed into it: covers
+                // are usually wide (16:9 video stills), and resizing one
+                // straight to a square narrowed everything in it.
+                image.Mutate(ctx => ctx.Resize(new ResizeOptions
+                {
+                    Size = new Size(resolution, resolution),
+                    Mode = ResizeMode.Crop,
+                    Position = AnchorPositionMode.Center,
+                }));
 
                 var texture = renderer.CreateTexture(image.Width, image.Height);
                 texture.SetData(new TextureUpload(image.Clone()));

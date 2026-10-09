@@ -265,6 +265,25 @@ namespace OsuClient.Tests.Visual
                     NewHighScore = true,
                     PreviousBest = 1_102_455,
                 }),
+                // A failed run, with the retry the player screen offers.
+                ["results-failed"] = () => new Game.Screens.Results.ResultsScreen(new Game.Screens.Results.ResultsScreen.Result
+                {
+                    Title = "abo - shaw",
+                    Difficulty = "Insane",
+                    Grade = Game.Screens.Gameplay.Grade.D,
+                    Score = 318_240,
+                    Accuracy = 71.36,
+                    MaxCombo = 58,
+                    CountGreat = 140,
+                    CountOk = 38,
+                    CountMeh = 11,
+                    CountMiss = 44,
+                    Failed = true,
+                    PreviousBest = 402_115,
+                })
+                {
+                    Retry = () => { },
+                },
                 // Choosing a song: the record lifting off the wheel and
                 // gliding in, frozen at a moment of it, then landed, then
                 // played into the ripple.

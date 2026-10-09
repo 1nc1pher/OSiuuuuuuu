@@ -370,7 +370,12 @@ namespace OsuClient.Game.Screens.Gameplay
 
         private void updateBall(double time, Vector2 cursorScreenSpace, bool anyKeyHeld)
         {
-            if (time < StartTime || time > EndTime)
+            // The tail is judged on the first frame at or after EndTime, which
+            // is almost never exactly EndTime -- so tracking has to stay
+            // live until the tail has been judged, or it could never count.
+            bool tailPending = parts.Count > 0 && !parts[^1].Judged;
+
+            if (time < StartTime || (time > EndTime && !tailPending))
             {
                 tracking = false;
                 return;

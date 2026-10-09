@@ -64,6 +64,18 @@ namespace OsuClient.Game.Screens.SongSelect
         /// </summary>
         private const float card_design_diameter = 1080 * 1.52f;
 
+        /// <summary>
+        /// The selected-song card's side, at <see cref="card_design_diameter"/>.
+        /// Sized against the narrowest slice the wheel ever has (one of
+        /// <see cref="MaxWedges"/>): pushed out to <see cref="card_outer_edge"/>,
+        /// where that slice is widest, it keeps about 20 px clear of both
+        /// slice edges for its glow.
+        /// </summary>
+        private const float card_size = 180;
+
+        /// <summary>How far from the hub the card's outer edge sits, as a fraction of the disc's diameter.</summary>
+        private const float card_outer_edge = 0.495f;
+
         private const float selected_scale = 1.055f;
         private const float selected_nudge = 26;
 
@@ -274,8 +286,7 @@ namespace OsuClient.Game.Screens.SongSelect
                         // nudged off it — that bisector *is* the wedge's
                         // widest line, so centring on it needs no vertical
                         // offset once the frame sits out at the rim.
-                        Position = new Vector2(-32, 0),
-                        Size = new Vector2(148),
+                        Size = new Vector2(card_size),
                         Masking = true,
                         CornerRadius = 6,
                         BorderThickness = 3f,
@@ -481,10 +492,9 @@ namespace OsuClient.Game.Screens.SongSelect
 
             float diameter = DrawWidth;
 
-            // The card sits along the 9 o'clock spoke: far enough out that the
-            // thumbnail stays on the record, with the title block extending
-            // back towards the hub, where there is room for any length.
-            selectionCard.X = -diameter * 0.42f;
+            // The card sits along the 9 o'clock spoke, its outer edge near the
+            // rim, where the selected slice is widest.
+            selectionCard.X = -diameter * card_outer_edge;
             selectionCard.Scale = new Vector2(diameter / card_design_diameter);
 
             tonearm.Size = new Vector2(diameter);

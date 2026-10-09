@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using osu.Framework.Graphics;
@@ -281,6 +282,37 @@ namespace OsuClient.Tests.Visual
             AddAssert("gameplay stopped at the fail", () => player.Completed);
 
             AddUntilStep("results screen takes over", () => stack.CurrentScreen is ResultsScreen);
+        }
+
+        [Test]
+        public void TestRetryFromAFailedRunStartsTheMapAgain()
+        {
+            ResultsScreen firstResults = null!;
+
+            pushGameplay(drain_map);
+
+            AddUntilStep("the run fails", () => player.Failed);
+            AddUntilStep("results screen takes over",
+                () => stack.CurrentScreen is ResultsScreen results && results.IsLoaded);
+
+            AddStep("retry", () =>
+            {
+                firstResults = (ResultsScreen)stack.CurrentScreen!;
+                firstResults.TriggerEvent(new KeyDownEvent(new InputState(), Key.R));
+            });
+
+            // The drain map fails again within moments, so the new player may
+            // already have its own results up: look for it anywhere above the
+            // first one, not only on top.
+            AddUntilStep("a fresh player was started", () => screensOnStack().Any(
+                screen => screen is PlayerScreen fresh && fresh != player));
+            AddAssert("the first results are gone", () => !screensOnStack().Contains(firstResults));
+        }
+
+        private IEnumerable<IScreen> screensOnStack()
+        {
+            for (var screen = stack.CurrentScreen; screen != null; screen = screen.GetParentScreen())
+                yield return screen;
         }
     }
 }

@@ -312,8 +312,9 @@ namespace OsuClient.Tests.Beatmaps
             string nested = Path.Combine(root, "frontend", "OsuClient.Desktop", "bin", "Debug", "net8.0");
             Directory.CreateDirectory(nested);
 
-            File.WriteAllText(Path.Combine(root, "FRONTEND_PLAN.md"), "plan");
-            File.WriteAllText(Path.Combine(root, "BACKEND.md"), "backend");
+            Directory.CreateDirectory(Path.Combine(root, "src"));
+            File.WriteAllText(Path.Combine(root, "src", "main.py"), "# backend");
+            File.WriteAllText(Path.Combine(root, "frontend", "OsuClient.sln"), "frontend");
 
             Assert.That(BeatmapLibrary.FindRepositoryRoot(nested), Is.EqualTo(root));
         }
@@ -332,8 +333,8 @@ namespace OsuClient.Tests.Beatmaps
         public void PartialMarkerSetDoesNotCountAsTheRepositoryRoot()
         {
             string root = Path.Combine(songs, "repo");
-            Directory.CreateDirectory(root);
-            File.WriteAllText(Path.Combine(root, "FRONTEND_PLAN.md"), "plan only");
+            Directory.CreateDirectory(Path.Combine(root, "src"));
+            File.WriteAllText(Path.Combine(root, "src", "main.py"), "backend only");
 
             Assert.That(BeatmapLibrary.FindRepositoryRoot(root), Is.Null);
         }

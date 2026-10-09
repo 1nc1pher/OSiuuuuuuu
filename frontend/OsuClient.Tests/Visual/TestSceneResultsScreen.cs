@@ -1,6 +1,8 @@
+using System.Linq;
 using NUnit.Framework;
 using osu.Framework.Graphics;
 using osu.Framework.Screens;
+using osu.Framework.Testing;
 using OsuClient.Game.Screens.Gameplay;
 using OsuClient.Game.Screens.Results;
 using osuTK.Input;
@@ -32,12 +34,17 @@ namespace OsuClient.Tests.Visual
             Failed = failed,
         };
 
-        private void push(ResultsScreen.Result value)
+        private int retries;
+
+        private void push(ResultsScreen.Result value, bool withRetry = false)
         {
             AddStep("push results", () =>
             {
+                retries = 0;
                 Child = stack = new ScreenStack { RelativeSizeAxes = Axes.Both };
-                stack.Push(results = new ResultsScreen(value));
+                stack.Push(results = withRetry
+                    ? new ResultsScreen(value) { Retry = () => retries++ }
+                    : new ResultsScreen(value));
             });
 
             AddUntilStep("results loaded", () => results.IsLoaded);
@@ -115,6 +122,47 @@ namespace OsuClient.Tests.Visual
             });
 
             AddUntilStep("screen was exited", () => stack.CurrentScreen is not ResultsScreen);
+        }
+
+        private void pressKey(Key key) => AddStep($"press {key}", () =>
+            results.TriggerEvent(new osu.Framework.Input.Events.KeyDownEvent(
+                new osu.Framework.Input.States.InputState(), key)));
+
+        [Test]
+        public void TestFailedRunOffersRetry()
+        {
+            push(result(Grade.D, failed: true), withRetry: true);
+
+            AddAssert("retry button shown", () => results.ChildrenOfType<PauseButton>().Count() == 1);
+
+            pressKey(Key.R);
+
+            AddAssert("retry asked for once", () => retries == 1);
+            AddUntilStep("results closed for the retry", () => stack.CurrentScreen is not ResultsScreen);
+        }
+
+        [Test]
+        public void TestRetryButtonRetries()
+        {
+            push(result(Grade.D, failed: true), withRetry: true);
+
+            AddStep("click retry", () => results.ChildrenOfType<PauseButton>().Single().TriggerClick());
+
+            AddAssert("retry asked for once", () => retries == 1);
+            AddUntilStep("results closed for the retry", () => stack.CurrentScreen is not ResultsScreen);
+        }
+
+        [Test]
+        public void TestClearedRunHasNoRetry()
+        {
+            push(result(Grade.S, failed: false), withRetry: true);
+
+            AddAssert("no retry button", () => !results.ChildrenOfType<PauseButton>().Any());
+
+            pressKey(Key.R);
+
+            AddAssert("nothing retried", () => retries == 0);
+            AddAssert("still on the results", () => stack.CurrentScreen is ResultsScreen);
         }
     }
 }

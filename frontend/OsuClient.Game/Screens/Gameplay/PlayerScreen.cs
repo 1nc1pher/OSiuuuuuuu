@@ -864,7 +864,7 @@ namespace OsuClient.Game.Screens.Gameplay
                     return;
 
                 track?.Stop();
-                this.Push(new ResultsScreen(result));
+                this.Push(new ResultsScreen(result) { Retry = () => retryRequested = true });
             }, results_delay);
         }
 
@@ -1049,6 +1049,9 @@ namespace OsuClient.Game.Screens.Gameplay
         /// would flash song select and its preview audio while the new player
         /// loads.
         /// </summary>
+        /// <summary>Set by the results screen's Retry, read when it closes.</summary>
+        private bool retryRequested;
+
         private void restart()
         {
             if (!this.IsCurrentScreen())
@@ -1082,12 +1085,20 @@ namespace OsuClient.Game.Screens.Gameplay
             // to song select instead of dropping them back into a map that
             // has already ended.
             //
+            // Unless the player asked for another go from there: then the map
+            // starts again, the same way the pause menu's restart does.
+            //
             // Deferred by a frame: exiting from inside the resume callback
             // re-enters the screen stack while it is still unwinding.
             if (resultsQueued)
                 Schedule(() =>
                 {
-                    if (this.IsCurrentScreen())
+                    if (!this.IsCurrentScreen())
+                        return;
+
+                    if (retryRequested)
+                        restart();
+                    else
                         this.Exit();
                 });
         }

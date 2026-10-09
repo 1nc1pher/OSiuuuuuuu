@@ -110,8 +110,17 @@ namespace OsuClient.Game.Beatmaps
                 : name;
         }
 
-        /// <summary>Files that mark the repository root when walking upwards.</summary>
-        private static readonly string[] repository_markers = { "FRONTEND_PLAN.md", "BACKEND.md" };
+        /// <summary>
+        /// Files that mark the repository root when walking upwards: one from
+        /// each half of the project. Structural files rather than docs, since
+        /// docs get moved around (the plans once moved into documentations/
+        /// and the whole app lost track of its checkout).
+        /// </summary>
+        private static readonly string[] repository_markers =
+        {
+            System.IO.Path.Combine("src", "main.py"),
+            System.IO.Path.Combine("frontend", "OsuClient.sln"),
+        };
 
         /// <summary>
         /// Resolves the songs directory to use when none was given explicitly:

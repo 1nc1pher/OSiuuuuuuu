@@ -22,6 +22,9 @@ namespace OsuClient.Tests.Visual
             if (args.Length > 0 && args[0] == "--screenshot")
                 return ScreenshotHarness.Run(args);
 
+            if (args.Length > 0 && args[0] == "--record-gameplay")
+                return GameplayRecorder.Run(args);
+
             if (args.Length > 0 && args[0] == "--bench-gameplay")
                 return GameplayFrameBench.Run(args);
 

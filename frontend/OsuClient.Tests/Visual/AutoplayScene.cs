@@ -40,6 +40,9 @@ namespace OsuClient.Tests.Visual
         /// <summary>The run's gameplay time, in milliseconds. For the frame benchmark.</summary>
         public double GameplayTime => player.IsLoaded ? player.GameplayTime : double.NaN;
 
+        /// <summary>The run's score state, for the recorder's end-of-run report.</summary>
+        public ScoreProcessor ScoreState => player.ScoreState;
+
         private int next;
         private HitObjectData? holding;
         private double releaseAt = double.NaN;

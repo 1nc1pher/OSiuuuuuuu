@@ -1,5 +1,5 @@
-using osu.Framework.Extensions.Color4Extensions;
 using System;
+using osu.Framework.Extensions.Color4Extensions;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
@@ -67,6 +67,15 @@ namespace OsuClient.Game.Screens.Results
 
         /// <summary>The run on display. Exposed for tests.</summary>
         public Result ShownResult => result;
+
+        /// <summary>
+        /// Plays the same map again. Offered on a failed run, where trying
+        /// again is the likeliest next move; the screen that pushed this one
+        /// does the actual restarting once this has closed.
+        /// </summary>
+        public Action? Retry { get; init; }
+
+        private bool offersRetry => result.Failed && Retry != null;
 
         public ResultsScreen(Result result)
         {
@@ -148,11 +157,19 @@ namespace OsuClient.Game.Screens.Results
                         },
                         createHighScoreLine(),
                         createJudgementBreakdown(),
+                        offersRetry
+                            ? new PauseButton("Retry", retry_colour, retry)
+                            {
+                                Margin = new MarginPadding { Top = 26 },
+                            }
+                            : Empty(),
                         new RetroText
                         {
                             Anchor = Anchor.TopCentre,
                             Origin = Anchor.TopCentre,
-                            Text = "Escape or click to return to song select",
+                            Text = offersRetry
+                                ? "R to retry   ·   Escape or click elsewhere to return to song select"
+                                : "Escape or click to return to song select",
                             Font = RetroFontFamily.Body,
                             TextSize = 13,
                             Colour = new Color4(0.55f, 0.55f, 0.65f, 1f),
@@ -294,11 +311,31 @@ namespace OsuClient.Game.Screens.Results
             _ => new Color4(1f, 0.45f, 0.45f, 1f),
         };
 
+        private static readonly Color4 retry_colour = new Color4(1f, 0.78f, 0.35f, 1f);
+
+        private bool retrying;
+
+        private void retry()
+        {
+            if (retrying || !this.IsCurrentScreen())
+                return;
+
+            retrying = true;
+            Retry?.Invoke();
+            this.Exit();
+        }
+
         protected override bool OnKeyDown(KeyDownEvent e)
         {
             if (e.Key == osuTK.Input.Key.Escape)
             {
                 this.Exit();
+                return true;
+            }
+
+            if (e.Key == osuTK.Input.Key.R && offersRetry && !e.Repeat)
+            {
+                retry();
                 return true;
             }
 
